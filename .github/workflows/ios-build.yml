@@ -40,7 +40,7 @@ jobs:
           ./Godot.app/Contents/MacOS/Godot \
             --headless \
             --path . \
-            --export-debug "iOS" \
+            --export-debug "IOS YAHHH" \
             ios-build
 
       - name: Upload iOS project
