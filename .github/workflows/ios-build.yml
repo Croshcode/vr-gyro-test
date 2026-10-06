@@ -453,6 +453,46 @@ jobs:
           echo "XCODE_SCHEME saved as:"
           echo "[$SCHEME]"
 
+      - name: Diagnose Xcode build settings
+        run: |
+          set -euxo pipefail
+
+          echo "========================================"
+          echo "XCODE BUILD SETTINGS DIAGNOSTIC"
+          echo "========================================"
+
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphoneos \
+            -configuration Debug \
+            -showBuildSettings \
+            PRODUCT_NAME="ProjectQuestnt" \
+            | grep -E \
+              '(^| )PRODUCT_NAME =|(^| )FULL_PRODUCT_NAME =|(^| )WRAPPER_NAME =|(^| )WRAPPER_EXTENSION =|(^| )TARGET_BUILD_DIR =|(^| )BUILT_PRODUCTS_DIR =|(^| )CONFIGURATION_BUILD_DIR =|(^| )CONTENTS_FOLDER_PATH ='
+
+          echo ""
+          echo "========================================"
+          echo "TARGET BUILD PHASES"
+          echo "========================================"
+
+          grep -n \
+            -A80 \
+            'D0BCFE3318AEBDA2004A7AAE' \
+            ios-build/ProjectQuestnt.xcodeproj/project.pbxproj \
+            | head -100
+
+          echo ""
+          echo "========================================"
+          echo "ALL PRODUCT REFERENCES"
+          echo "========================================"
+
+          grep -n \
+            -E \
+            'productReference|wrapper.application|PBXFileReference|PBXNativeTarget|PRODUCT_NAME|WRAPPER_NAME|FULL_PRODUCT_NAME' \
+            ios-build/ProjectQuestnt.xcodeproj/project.pbxproj \
+            | head -200
+
       - name: Build unsigned iOS app
         run: |
           set -euxo pipefail
