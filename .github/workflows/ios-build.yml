@@ -120,7 +120,6 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
-          import re
 
           project = Path("ios-build/.xcodeproj/project.pbxproj")
           scheme = Path("ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme")
@@ -136,45 +135,84 @@ jobs:
 
           project_text = project.read_text()
 
+          print("===== REPAIRING PROJECT =====")
+
+          old_product = 'D0BCFE3418AEBDA2004A7AAE /* .app */'
+          new_product = 'D0BCFE3418AEBDA2004A7AAE /* ProjectQuestnt.app */'
+
           project_text = project_text.replace(
-              'D0BCFE3418AEBDA2004A7AAE /* .app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ".app";',
-              'D0BCFE3418AEBDA2004A7AAE /* ProjectQuestnt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ProjectQuestnt.app";'
+              old_product,
+              new_product
           )
 
           project_text = project_text.replace(
-              'D0BCFE3318AEBDA2004A7AAE /*  */ = {',
-              'D0BCFE3318AEBDA2004A7AAE /* ProjectQuestnt */ = {'
+              'path = ".app";',
+              'path = "ProjectQuestnt.app";'
           )
+
+          old_target_comment = 'D0BCFE3318AEBDA2004A7AAE /*  */ = {'
+          new_target_comment = 'D0BCFE3318AEBDA2004A7AAE /* ProjectQuestnt */ = {'
+
+          if old_target_comment in project_text:
+              project_text = project_text.replace(
+                  old_target_comment,
+                  new_target_comment,
+                  1
+              )
 
           project_text = project_text.replace(
               'Build configuration list for PBXNativeTarget ""',
               'Build configuration list for PBXNativeTarget "ProjectQuestnt"'
           )
 
-          target_pattern = (
-              r'(D0BCFE3318AEBDA2004A7AAE /\* ProjectQuestnt \*/ = \{.*?'
-              r'\n\s*name = )""(;'
+          target_start = project_text.find(
+              'D0BCFE3318AEBDA2004A7AAE /* ProjectQuestnt */ = {'
           )
 
-          project_text, count = re.subn(
-              target_pattern,
-              r'\1"ProjectQuestnt"\2',
-              project_text,
-              count=1,
-              flags=re.DOTALL
-          )
-
-          if count != 1:
+          if target_start == -1:
               raise SystemExit(
-                  f"ERROR: Could not repair native target name. Matches: {count}"
+                  "ERROR: Could not find ProjectQuestnt native target."
               )
 
-          project_text = project_text.replace(
-              'D0BCFE3418AEBDA2004A7AAE /* .app */',
-              'D0BCFE3418AEBDA2004A7AAE /* ProjectQuestnt.app */'
+          target_end = project_text.find(
+              '\n\t};',
+              target_start
           )
 
+          if target_end == -1:
+              raise SystemExit(
+                  "ERROR: Could not find end of native target."
+              )
+
+          target_end += len('\n\t};')
+
+          target_block = project_text[target_start:target_end]
+
+          print("===== ORIGINAL TARGET BLOCK =====")
+          print(target_block)
+
+          if 'name = "";' not in target_block:
+              raise SystemExit(
+                  "ERROR: Expected empty native target name was not found."
+              )
+
+          target_block = target_block.replace(
+              'name = "";',
+              'name = "ProjectQuestnt";',
+              1
+          )
+
+          project_text = (
+              project_text[:target_start]
+              + target_block
+              + project_text[target_end:]
+          )
+
+          project.write_text(project_text)
+
           scheme_text = scheme.read_text()
+
+          print("===== REPAIRING SCHEME =====")
 
           scheme_text = scheme_text.replace(
               'BlueprintIdentifier = "A340BDFEBCA49239A941883D"',
@@ -197,15 +235,29 @@ jobs:
           )
 
           scheme.write_text(scheme_text)
-          project.write_text(project_text)
 
-          print("Xcode project repair complete.")
-          print(f"Target ID: {target_id}")
+          print("========================================")
+          print("XCODE PROJECT REPAIR COMPLETE")
+          print("========================================")
+          print(f"Target ID:  {target_id}")
           print(f"Product ID: {product_id}")
-          print("Target name: ProjectQuestnt")
-          print("Product: ProjectQuestnt.app")
-          print("Scheme: ProjectQuestnt")
+          print("Target:     ProjectQuestnt")
+          print("Product:    ProjectQuestnt.app")
+          print("Scheme:     ProjectQuestnt")
           PY
+
+          echo ""
+          echo "===== REPAIRED PROJECT CHECKS ====="
+
+          grep -n \
+            -E 'PBXNativeTarget|name = "ProjectQuestnt"|ProjectQuestnt.app' \
+            ios-build/.xcodeproj/project.pbxproj \
+            | head -80
+
+          echo ""
+          echo "===== REPAIRED SCHEME ====="
+
+          cat ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme
 
       - name: Rename Xcode project
         run: |
@@ -237,14 +289,24 @@ jobs:
         run: |
           set -euxo pipefail
 
-          xcodebuild -list -project "$XCODE_PROJECT"
+          echo "===== XCODE PROJECT ====="
+          echo "$XCODE_PROJECT"
+
+          echo ""
+          echo "===== XCODE PROJECT LIST ====="
+
+          xcodebuild \
+            -list \
+            -project "$XCODE_PROJECT"
 
       - name: Find Xcode scheme
         run: |
           set -euxo pipefail
 
           SCHEME="$(
-            xcodebuild -list -project "$XCODE_PROJECT" 2>/dev/null |
+            xcodebuild \
+              -list \
+              -project "$XCODE_PROJECT" 2>/dev/null |
             awk '
               /Schemes:/ {
                 found=1
@@ -269,6 +331,9 @@ jobs:
       - name: Build unsigned iOS app
         run: |
           set -euxo pipefail
+
+          echo "Project: $XCODE_PROJECT"
+          echo "Scheme: $XCODE_SCHEME"
 
           xcodebuild \
             -project "$XCODE_PROJECT" \
@@ -298,13 +363,20 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app was produced."
-            find "$GITHUB_WORKSPACE/build/Build/Products" -maxdepth 4 -print
+
+            echo ""
+            echo "Build products:"
+            find "$GITHUB_WORKSPACE/build/Build/Products" \
+              -maxdepth 4 \
+              -print
+
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
-          echo "Compiled app: $APP_PATH"
+          echo "Compiled app:"
+          echo "$APP_PATH"
 
       - name: Package unsigned IPA
         run: |
@@ -317,10 +389,13 @@ jobs:
 
           cd ipa
 
-          zip -qry "$GITHUB_WORKSPACE/ProjectQuestnt-unsigned.ipa" Payload
+          zip -qry \
+            "$GITHUB_WORKSPACE/ProjectQuestnt-unsigned.ipa" \
+            Payload
 
           cd "$GITHUB_WORKSPACE"
 
+          echo "IPA created:"
           ls -lh ProjectQuestnt-unsigned.ipa
 
       - name: Upload IPA
