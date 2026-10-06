@@ -119,7 +119,7 @@ jobs:
             ios-build/
           if-no-files-found: ignore
 
-            - name: Repair generated Xcode project
+      - name: Repair generated Xcode project
         run: |
           set -euxo pipefail
 
@@ -148,10 +148,6 @@ jobs:
           print("REPAIRING GENERATED XCODE PROJECT")
           print("========================================")
 
-          # ------------------------------------------------------------
-          # PRODUCT FILE REFERENCE
-          # ------------------------------------------------------------
-
           project_text = project_text.replace(
               'D0BCFE3418AEBDA2004A7AAE /* .app */',
               f'D0BCFE3418AEBDA2004A7AAE /* {PRODUCT_NAME} */'
@@ -166,10 +162,6 @@ jobs:
               'path = .app;',
               f'path = "{PRODUCT_NAME}";'
           )
-
-          # ------------------------------------------------------------
-          # TARGET NAME
-          # ------------------------------------------------------------
 
           project_text = project_text.replace(
               f'{TARGET_ID} /*  */ = {{',
@@ -187,10 +179,6 @@ jobs:
               'Build configuration list for PBXNativeTarget ""',
               f'Build configuration list for PBXNativeTarget "{TARGET_NAME}"'
           )
-
-          # ------------------------------------------------------------
-          # FIND NATIVE TARGET
-          # ------------------------------------------------------------
 
           target_start = project_text.find(
               f'{TARGET_ID} /* {TARGET_NAME} */ = {{'
@@ -214,10 +202,6 @@ jobs:
           target_end += len('\n\t};')
 
           target_block = project_text[target_start:target_end]
-
-          print("")
-          print("===== ORIGINAL TARGET BLOCK =====")
-          print(target_block)
 
           target_block = target_block.replace(
               'name = "";',
@@ -245,21 +229,6 @@ jobs:
               + project_text[target_end:]
           )
 
-          # ------------------------------------------------------------
-          # FIX EVERY PRODUCT_NAME SETTING
-          #
-          # This is the important fix.
-          #
-          # Godot may generate:
-          #
-          #   PRODUCT_NAME = "";
-          #
-          # which causes Xcode to construct:
-          #
-          #   .app
-          #
-          # ------------------------------------------------------------
-
           print("")
           print("===== PRODUCT_NAME SETTINGS BEFORE FIX =====")
 
@@ -272,11 +241,7 @@ jobs:
           for line in project_text.splitlines():
               if "PRODUCT_NAME =" in line:
                   prefix = line.split("PRODUCT_NAME =", 1)[0]
-
-                  line = (
-                      prefix
-                      + f'PRODUCT_NAME = {TARGET_NAME};'
-                  )
+                  line = prefix + f'PRODUCT_NAME = {TARGET_NAME};'
 
               fixed_lines.append(line)
 
@@ -289,10 +254,6 @@ jobs:
               if "PRODUCT_NAME" in line:
                   print(f"{number}: {line}")
 
-          # ------------------------------------------------------------
-          # FIX OTHER POSSIBLE EMPTY PRODUCT FIELDS
-          # ------------------------------------------------------------
-
           project_text = project_text.replace(
               'productName = "";',
               f'productName = "{TARGET_NAME}";'
@@ -303,15 +264,7 @@ jobs:
               f'productName = "{TARGET_NAME}";'
           )
 
-          # ------------------------------------------------------------
-          # WRITE PROJECT
-          # ------------------------------------------------------------
-
           project.write_text(project_text)
-
-          # ------------------------------------------------------------
-          # REPAIR SCHEME
-          # ------------------------------------------------------------
 
           print("")
           print("===== REPAIRING SCHEME =====")
@@ -337,10 +290,6 @@ jobs:
           )
 
           scheme.write_text(scheme_text)
-
-          # ------------------------------------------------------------
-          # FINAL CHECKS
-          # ------------------------------------------------------------
 
           print("")
           print("========================================")
@@ -371,8 +320,6 @@ jobs:
           ]
 
           if empty_product_names:
-              print("ERROR: Empty PRODUCT_NAME still exists!")
-
               for number, line in empty_product_names:
                   print(f"{number}: {line}")
 
@@ -397,8 +344,6 @@ jobs:
           ]
 
           if bad_app_paths:
-              print("ERROR: Malformed .app path still exists!")
-
               for number, line in bad_app_paths:
                   print(f"{number}: {line}")
 
