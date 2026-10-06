@@ -530,6 +530,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
+            PRODUCT_NAME="ProjectQuestnt" \
             build
 
       - name: Find compiled app
