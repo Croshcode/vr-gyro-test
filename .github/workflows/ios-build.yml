@@ -14,29 +14,6 @@ jobs:
       - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Set Godot project name
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("project.godot")
-          text = path.read_text()
-
-          lines = text.splitlines()
-
-          for i, line in enumerate(lines):
-              if line.startswith("config/name="):
-                  lines[i] = 'config/name="Project Questnt"'
-                  break
-          else:
-              raise SystemExit("ERROR: config/name was not found in project.godot")
-
-          path.write_text("\n".join(lines) + "\n")
-          PY
-
-          echo "Project name:"
-          grep '^config/name=' project.godot
-
       - name: Download Godot
         run: |
           curl -L -o godot.zip \
@@ -72,37 +49,73 @@ jobs:
             --export-debug "IOS YAHHH" \
             ios-build/
 
-      - name: Show generated iOS files
+      - name: Inspect generated Xcode project
         run: |
-          echo "Generated files:"
+          echo "Generated iOS files:"
           find ios-build -maxdepth 3 -print
 
-      - name: Find Xcode project
-        run: |
-          XCODE_PROJECT="$(find ios-build \
-            -type d \
-            -name '*.xcodeproj' \
-            -print \
-            -quit)"
+          echo ""
+          echo "===== PROJECT FILE ====="
 
-          if [ -z "$XCODE_PROJECT" ]; then
-            echo "ERROR: No Xcode project was generated."
+          if [ -f "ios-build/.xcodeproj/project.pbxproj" ]; then
+            sed -n '1,160p' "ios-build/.xcodeproj/project.pbxproj"
+          else
+            echo "project.pbxproj not found"
+          fi
+
+          echo ""
+          echo "===== SCHEME FILE ====="
+
+          if [ -f "ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme" ]; then
+            sed -n '1,160p' "ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme"
+          else
+            echo ".xcscheme not found"
+          fi
+
+      - name: Fix generated Xcode project name
+        run: |
+          if [ -d "ios-build/.xcodeproj" ]; then
+            mv "ios-build/.xcodeproj" "ios-build/ProjectQuestnt.xcodeproj"
+          else
+            echo "ERROR: ios-build/.xcodeproj was not found."
             exit 1
           fi
 
-          echo "Found:"
-          echo "$XCODE_PROJECT"
+          echo "Renamed Xcode project:"
+          ls -la ios-build/
+
+      - name: Find Xcode project
+        run: |
+          XCODE_PROJECT="ios-build/ProjectQuestnt.xcodeproj"
+
+          if [ ! -d "$XCODE_PROJECT" ]; then
+            echo "ERROR: ProjectQuestnt.xcodeproj was not found."
+            exit 1
+          fi
 
           echo "XCODE_PROJECT=$XCODE_PROJECT" >> "$GITHUB_ENV"
+
+          echo "Using Xcode project:"
+          echo "$XCODE_PROJECT"
 
       - name: Find Xcode scheme
         run: |
           echo "Xcode project:"
           echo "$XCODE_PROJECT"
 
-          xcodebuild -list -project "$XCODE_PROJECT"
+          echo ""
+          echo "Xcode project information:"
 
-          SCHEME="$(xcodebuild -list -project "$XCODE_PROJECT" 2>/dev/null | \
+          xcodebuild \
+            -list \
+            -project "$XCODE_PROJECT"
+
+          echo ""
+          echo "Finding scheme..."
+
+          SCHEME="$(xcodebuild \
+            -list \
+            -project "$XCODE_PROJECT" 2>/dev/null | \
             awk '
               /Schemes:/ {
                 found=1
@@ -119,10 +132,11 @@ jobs:
             exit 1
           fi
 
-          echo "Scheme:"
-          echo "$SCHEME"
-
           echo "XCODE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "Using scheme:"
+          echo "$SCHEME"
 
       - name: Build unsigned iOS app
         run: |
@@ -150,12 +164,19 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app was produced."
-            find "$GITHUB_WORKSPACE/build/Build/Products" -maxdepth 4 -print
+
+            echo ""
+            echo "Build products:"
+            find "$GITHUB_WORKSPACE/build/Build/Products" \
+              -maxdepth 4 \
+              -print
+
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
+          echo ""
           echo "Compiled app:"
           echo "$APP_PATH"
 
@@ -174,6 +195,8 @@ jobs:
 
           cd "$GITHUB_WORKSPACE"
 
+          echo ""
+          echo "IPA created:"
           ls -lh ProjectQuestnt-unsigned.ipa
 
       - name: Upload IPA
