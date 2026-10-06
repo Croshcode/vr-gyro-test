@@ -1,4 +1,3 @@
-```yaml
 name: Build iOS
 
 on:
@@ -410,4 +409,3 @@ jobs:
         with:
           name: ProjectQuestnt-Xcode-project
           path: ios-build/
-```
