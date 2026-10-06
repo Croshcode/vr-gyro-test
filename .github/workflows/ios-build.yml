@@ -55,13 +55,14 @@ jobs:
 
           if [ -z "$XCODE_PROJECT" ]; then
             echo "ERROR: No Xcode project was generated."
+            echo "Contents of ios-build:"
             find ios-build -maxdepth 4 -print
             exit 1
           fi
 
           echo "XCODE_PROJECT=$XCODE_PROJECT" >> "$GITHUB_ENV"
 
-          echo "Found:"
+          echo "Found Xcode project:"
           echo "$XCODE_PROJECT"
 
       - name: Find Xcode scheme
