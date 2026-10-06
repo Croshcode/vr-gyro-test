@@ -2,7 +2,7 @@
 name: Build iOS
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   push:
     branches:
       - main
@@ -19,8 +19,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          curl -L --fail --retry 3 -o godot.zip \
-            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_macos.universal.zip
+          curl -L --fail --retry 3 -o godot.zip https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_macos.universal.zip
 
           unzip -q godot.zip
           chmod +x Godot.app/Contents/MacOS/Godot
@@ -29,8 +28,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          curl -L --fail --retry 3 -o templates.tpz \
-            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz
+          curl -L --fail --retry 3 -o templates.tpz https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz
 
           mkdir -p "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable"
 
@@ -39,8 +37,7 @@ jobs:
 
           unzip -q templates.tpz -d templates
 
-          cp -R templates/templates/* \
-            "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable/"
+          cp -R templates/templates/* "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable/"
 
       - name: Check Godot
         run: |
@@ -49,12 +46,10 @@ jobs:
           echo "===== GODOT VERSION ====="
           ./Godot.app/Contents/MacOS/Godot --version
 
-          echo ""
           echo "===== RUNNER ====="
           sw_vers
           uname -a
 
-          echo ""
           echo "===== DISK SPACE ====="
           df -h .
 
@@ -87,7 +82,6 @@ jobs:
 
           GODOT_EXIT=${PIPESTATUS[0]}
 
-          echo ""
           echo "========================================"
           echo "GODOT EXPORT FINISHED"
           echo "========================================"
@@ -95,25 +89,20 @@ jobs:
           echo "Exit code: $GODOT_EXIT"
           date
 
-          echo ""
           echo "===== IOS-BUILD SIZE ====="
           du -sh ios-build || true
 
-          echo ""
           echo "===== GENERATED FILES ====="
           find ios-build -maxdepth 4 -print | sort || true
 
-          echo ""
           echo "===== LAST 200 LOG LINES ====="
           tail -200 "$EXPORT_LOG" || true
 
           if [ "$GODOT_EXIT" -ne 0 ]; then
-            echo ""
             echo "ERROR: Godot export failed."
             exit "$GODOT_EXIT"
           fi
 
-          echo ""
           echo "Godot export completed successfully."
 
       - name: Upload Godot export diagnostics
@@ -219,19 +208,6 @@ jobs:
           print("Scheme: ProjectQuestnt")
           PY
 
-          echo ""
-          echo "===== REPAIRED PROJECT ====="
-
-          grep -n \
-            -E 'PBXNativeTarget|name = "ProjectQuestnt"|ProjectQuestnt.app' \
-            ios-build/.xcodeproj/project.pbxproj \
-            | head -80
-
-          echo ""
-          echo "===== REPAIRED SCHEME ====="
-
-          cat ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme
-
       - name: Rename Xcode project
         run: |
           set -euxo pipefail
@@ -262,24 +238,14 @@ jobs:
         run: |
           set -euxo pipefail
 
-          echo "===== XCODE PROJECT ====="
-          echo "$XCODE_PROJECT"
-
-          echo ""
-          echo "===== XCODE PROJECT LIST ====="
-
-          xcodebuild \
-            -list \
-            -project "$XCODE_PROJECT"
+          xcodebuild -list -project "$XCODE_PROJECT"
 
       - name: Find Xcode scheme
         run: |
           set -euxo pipefail
 
           SCHEME="$(
-            xcodebuild \
-              -list \
-              -project "$XCODE_PROJECT" 2>/dev/null |
+            xcodebuild -list -project "$XCODE_PROJECT" 2>/dev/null |
             awk '
               /Schemes:/ {
                 found=1
@@ -304,9 +270,6 @@ jobs:
       - name: Build unsigned iOS app
         run: |
           set -euxo pipefail
-
-          echo "Project: $XCODE_PROJECT"
-          echo "Scheme: $XCODE_SCHEME"
 
           xcodebuild \
             -project "$XCODE_PROJECT" \
@@ -336,20 +299,13 @@ jobs:
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app was produced."
-
-            echo ""
-            echo "Build products:"
-            find "$GITHUB_WORKSPACE/build/Build/Products" \
-              -maxdepth 4 \
-              -print
-
+            find "$GITHUB_WORKSPACE/build/Build/Products" -maxdepth 4 -print
             exit 1
           fi
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
-          echo "Compiled app:"
-          echo "$APP_PATH"
+          echo "Compiled app: $APP_PATH"
 
       - name: Package unsigned IPA
         run: |
@@ -362,13 +318,10 @@ jobs:
 
           cd ipa
 
-          zip -qry \
-            "$GITHUB_WORKSPACE/ProjectQuestnt-unsigned.ipa" \
-            Payload
+          zip -qry "$GITHUB_WORKSPACE/ProjectQuestnt-unsigned.ipa" Payload
 
           cd "$GITHUB_WORKSPACE"
 
-          echo "IPA created:"
           ls -lh ProjectQuestnt-unsigned.ipa
 
       - name: Upload IPA
