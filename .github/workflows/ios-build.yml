@@ -49,39 +49,142 @@ jobs:
             --export-debug "IOS YAHHH" \
             ios-build/
 
-      - name: Inspect generated Xcode project
+      - name: Repair generated Xcode project
         run: |
-          echo "Generated iOS files:"
-          find ios-build -maxdepth 3 -print
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          project = Path("ios-build/.xcodeproj/project.pbxproj")
+          scheme = Path("ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme")
+
+          if not project.exists():
+              raise SystemExit("ERROR: project.pbxproj was not generated.")
+
+          if not scheme.exists():
+              raise SystemExit("ERROR: Xcode scheme was not generated.")
+
+          target_id = "D0BCFE3318AEBDA2004A7AAE"
+          product_id = "D0BCFE3418AEBDA2004A7AAE"
+
+          project_text = project.read_text()
+
+          # ------------------------------------------------------------
+          # Repair the generated application product reference.
+          # ------------------------------------------------------------
+
+          project_text = project_text.replace(
+              'D0BCFE3418AEBDA2004A7AAE /* .app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ".app";',
+              'D0BCFE3418AEBDA2004A7AAE /* ProjectQuestnt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ProjectQuestnt.app";'
+          )
+
+          # ------------------------------------------------------------
+          # Repair the native target name.
+          # ------------------------------------------------------------
+
+          project_text = project_text.replace(
+              'D0BCFE3318AEBDA2004A7AAE /*  */ = {',
+              'D0BCFE3318AEBDA2004A7AAE /* ProjectQuestnt */ = {'
+          )
+
+          project_text = project_text.replace(
+              'Build configuration list for PBXNativeTarget ""',
+              'Build configuration list for PBXNativeTarget "ProjectQuestnt"'
+          )
+
+          # Only repair the native target's empty name field.
+          target_pattern = (
+              r'(D0BCFE3318AEBDA2004A7AAE /\* ProjectQuestnt \*/ = \{.*?'
+              r'\n\s*name = )""(;'
+          )
+
+          project_text, count = re.subn(
+              target_pattern,
+              r'\1"ProjectQuestnt"\2',
+              project_text,
+              count=1,
+              flags=re.DOTALL
+          )
+
+          if count != 1:
+              raise SystemExit(
+                  f"ERROR: Could not repair the native target name. Matches: {count}"
+              )
+
+          # ------------------------------------------------------------
+          # Repair the product reference comments wherever they occur.
+          # ------------------------------------------------------------
+
+          project_text = project_text.replace(
+              'D0BCFE3418AEBDA2004A7AAE /* .app */',
+              'D0BCFE3418AEBDA2004A7AAE /* ProjectQuestnt.app */'
+          )
+
+          # ------------------------------------------------------------
+          # Repair the scheme.
+          # ------------------------------------------------------------
+
+          scheme_text = scheme.read_text()
+
+          # Godot generated the wrong BlueprintIdentifier.
+          scheme_text = scheme_text.replace(
+              'BlueprintIdentifier = "A340BDFEBCA49239A941883D"',
+              f'BlueprintIdentifier = "{target_id}"'
+          )
+
+          # Godot generated an empty BlueprintName.
+          scheme_text = scheme_text.replace(
+              'BlueprintName = ""',
+              'BlueprintName = "ProjectQuestnt"'
+          )
+
+          # Godot generated ".app" instead of the actual product name.
+          scheme_text = scheme_text.replace(
+              'BuildableName = ".app"',
+              'BuildableName = "ProjectQuestnt.app"'
+          )
+
+          # The project itself was renamed below, so make the scheme point
+          # to the repaired project name.
+          scheme_text = scheme_text.replace(
+              'ReferencedContainer = "container:.xcodeproj"',
+              'ReferencedContainer = "container:ProjectQuestnt.xcodeproj"'
+          )
+
+          scheme.write_text(scheme_text)
+          project.write_text(project_text)
+
+          print("Xcode project repair complete.")
+          print(f"Target ID:  {target_id}")
+          print(f"Product ID: {product_id}")
+          print("Target name: ProjectQuestnt")
+          print("Product: ProjectQuestnt.app")
+          print("Scheme: ProjectQuestnt")
+          PY
 
           echo ""
-          echo "===== PROJECT FILE ====="
+          echo "===== REPAIRED PROJECT CHECKS ====="
 
-          if [ -f "ios-build/.xcodeproj/project.pbxproj" ]; then
-            sed -n '1,160p' "ios-build/.xcodeproj/project.pbxproj"
-          else
-            echo "project.pbxproj not found"
-          fi
+          grep -n \
+            -E 'PBXNativeTarget|name = "ProjectQuestnt"|productName = "Project Questnt"|ProjectQuestnt.app' \
+            ios-build/.xcodeproj/project.pbxproj \
+            | head -80
 
           echo ""
-          echo "===== SCHEME FILE ====="
+          echo "===== REPAIRED SCHEME ====="
 
-          if [ -f "ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme" ]; then
-            sed -n '1,160p' "ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme"
-          else
-            echo ".xcscheme not found"
-          fi
+          cat ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme
 
-      - name: Fix generated Xcode project name
+      - name: Rename Xcode project
         run: |
           if [ -d "ios-build/.xcodeproj" ]; then
             mv "ios-build/.xcodeproj" "ios-build/ProjectQuestnt.xcodeproj"
           else
-            echo "ERROR: ios-build/.xcodeproj was not found."
+            echo "ERROR: Generated .xcodeproj was not found."
             exit 1
           fi
 
-          echo "Renamed Xcode project:"
+          echo "Xcode project:"
           ls -la ios-build/
 
       - name: Find Xcode project
@@ -98,24 +201,26 @@ jobs:
           echo "Using Xcode project:"
           echo "$XCODE_PROJECT"
 
-      - name: Find Xcode scheme
+      - name: Validate Xcode project
         run: |
-          echo "Xcode project:"
+          echo "===== XCODE PROJECT ====="
           echo "$XCODE_PROJECT"
 
           echo ""
-          echo "Xcode project information:"
+          echo "===== XCODE PROJECT LIST ====="
 
           xcodebuild \
             -list \
             -project "$XCODE_PROJECT"
 
-          echo ""
-          echo "Finding scheme..."
+      - name: Find Xcode scheme
+        run: |
+          echo "Finding Xcode scheme..."
 
-          SCHEME="$(xcodebuild \
-            -list \
-            -project "$XCODE_PROJECT" 2>/dev/null | \
+          SCHEME="$(
+            xcodebuild \
+              -list \
+              -project "$XCODE_PROJECT" 2>/dev/null |
             awk '
               /Schemes:/ {
                 found=1
@@ -125,7 +230,8 @@ jobs:
                 print
                 exit
               }
-            ')"
+            '
+          )"
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: No Xcode scheme found."
@@ -140,6 +246,10 @@ jobs:
 
       - name: Build unsigned iOS app
         run: |
+          echo "Building:"
+          echo "Project: $XCODE_PROJECT"
+          echo "Scheme:  $XCODE_SCHEME"
+
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
@@ -155,12 +265,14 @@ jobs:
 
       - name: Find compiled app
         run: |
-          APP_PATH="$(find "$GITHUB_WORKSPACE/build/Build/Products" \
-            -maxdepth 2 \
-            -type d \
-            -name '*.app' \
-            -print \
-            -quit)"
+          APP_PATH="$(
+            find "$GITHUB_WORKSPACE/build/Build/Products" \
+              -maxdepth 2 \
+              -type d \
+              -name '*.app' \
+              -print \
+              -quit
+          )"
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app was produced."
@@ -180,7 +292,7 @@ jobs:
           echo "Compiled app:"
           echo "$APP_PATH"
 
-      - name: Package IPA
+      - name: Package unsigned IPA
         run: |
           rm -rf ipa
           mkdir -p ipa/Payload
