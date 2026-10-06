@@ -51,7 +51,7 @@ jobs:
 
       - name: Find Xcode project
         run: |
-          XCODE_PROJECT="$(find ios-build -name '*.xcodeproj' -print -quit)"
+          XCODE_PROJECT="$(find ios-build -type d -name '*.xcodeproj' ! -name 'xcodeproj' -print -quit)"
 
           if [ -z "$XCODE_PROJECT" ]; then
             echo "ERROR: No Xcode project was generated."
