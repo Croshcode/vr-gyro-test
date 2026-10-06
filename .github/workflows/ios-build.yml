@@ -119,7 +119,7 @@ jobs:
             ios-build/
           if-no-files-found: ignore
 
-      - name: Repair generated Xcode project
+            - name: Repair generated Xcode project
         run: |
           set -euxo pipefail
 
@@ -137,13 +137,16 @@ jobs:
 
           TARGET_ID = "D0BCFE3318AEBDA2004A7AAE"
           PRODUCT_ID = "D0BCFE3418AEBDA2004A7AAE"
+
           TARGET_NAME = "ProjectQuestnt"
           PRODUCT_NAME = "ProjectQuestnt.app"
 
           project_text = project.read_text()
           scheme_text = scheme.read_text()
 
-          print("===== REPAIRING PROJECT =====")
+          print("========================================")
+          print("REPAIRING GENERATED XCODE PROJECT")
+          print("========================================")
 
           # ------------------------------------------------------------
           # PRODUCT FILE REFERENCE
@@ -151,11 +154,6 @@ jobs:
 
           project_text = project_text.replace(
               'D0BCFE3418AEBDA2004A7AAE /* .app */',
-              f'D0BCFE3418AEBDA2004A7AAE /* {PRODUCT_NAME} */'
-          )
-
-          project_text = project_text.replace(
-              'D0BCFE3418AEBDA2004A7AAE /* */',
               f'D0BCFE3418AEBDA2004A7AAE /* {PRODUCT_NAME} */'
           )
 
@@ -191,7 +189,7 @@ jobs:
           )
 
           # ------------------------------------------------------------
-          # FIND NATIVE TARGET BLOCK
+          # FIND NATIVE TARGET
           # ------------------------------------------------------------
 
           target_start = project_text.find(
@@ -217,6 +215,7 @@ jobs:
 
           target_block = project_text[target_start:target_end]
 
+          print("")
           print("===== ORIGINAL TARGET BLOCK =====")
           print(target_block)
 
@@ -247,43 +246,61 @@ jobs:
           )
 
           # ------------------------------------------------------------
-          # REPLACE ALL MALFORMED PRODUCT_NAME SETTINGS
+          # FIX EVERY PRODUCT_NAME SETTING
+          #
+          # This is the important fix.
+          #
+          # Godot may generate:
+          #
+          #   PRODUCT_NAME = "";
+          #
+          # which causes Xcode to construct:
+          #
+          #   .app
+          #
           # ------------------------------------------------------------
 
-          print("===== REPAIRING PRODUCT_NAME =====")
+          print("")
+          print("===== PRODUCT_NAME SETTINGS BEFORE FIX =====")
 
-          project_text = project_text.replace(
-              'PRODUCT_NAME = .app;',
-              f'PRODUCT_NAME = {TARGET_NAME};'
-          )
+          for number, line in enumerate(project_text.splitlines(), 1):
+              if "PRODUCT_NAME" in line:
+                  print(f"{number}: {line}")
 
-          project_text = project_text.replace(
-              'PRODUCT_NAME = ".app";',
-              f'PRODUCT_NAME = {TARGET_NAME};'
-          )
+          fixed_lines = []
 
-          project_text = project_text.replace(
-              'PRODUCT_NAME = .app',
-              f'PRODUCT_NAME = {TARGET_NAME}'
-          )
+          for line in project_text.splitlines():
+              if "PRODUCT_NAME =" in line:
+                  prefix = line.split("PRODUCT_NAME =", 1)[0]
 
-          project_text = project_text.replace(
-              'PRODUCT_NAME = ".app"',
-              f'PRODUCT_NAME = {TARGET_NAME}'
-          )
+                  line = (
+                      prefix
+                      + f'PRODUCT_NAME = {TARGET_NAME};'
+                  )
+
+              fixed_lines.append(line)
+
+          project_text = "\n".join(fixed_lines) + "\n"
+
+          print("")
+          print("===== PRODUCT_NAME SETTINGS AFTER FIX =====")
+
+          for number, line in enumerate(project_text.splitlines(), 1):
+              if "PRODUCT_NAME" in line:
+                  print(f"{number}: {line}")
 
           # ------------------------------------------------------------
-          # REPLACE ANY REMAINING EXPLICIT ".app" PRODUCT PATH
+          # FIX OTHER POSSIBLE EMPTY PRODUCT FIELDS
           # ------------------------------------------------------------
 
           project_text = project_text.replace(
-              'path = ".app";',
-              f'path = "{PRODUCT_NAME}";'
+              'productName = "";',
+              f'productName = "{TARGET_NAME}";'
           )
 
           project_text = project_text.replace(
-              'path = .app;',
-              f'path = "{PRODUCT_NAME}";'
+              'productName = ".app";',
+              f'productName = "{TARGET_NAME}";'
           )
 
           # ------------------------------------------------------------
@@ -296,6 +313,7 @@ jobs:
           # REPAIR SCHEME
           # ------------------------------------------------------------
 
+          print("")
           print("===== REPAIRING SCHEME =====")
 
           scheme_text = scheme_text.replace(
@@ -321,7 +339,7 @@ jobs:
           scheme.write_text(scheme_text)
 
           # ------------------------------------------------------------
-          # FINAL DIAGNOSTICS
+          # FINAL CHECKS
           # ------------------------------------------------------------
 
           print("")
@@ -332,25 +350,63 @@ jobs:
           for number, line in enumerate(project_text.splitlines(), 1):
               if (
                   "PRODUCT_NAME" in line
-                  or ".app" in line
                   or "productName" in line
                   or "productReference" in line
-                  or "PBXFileReference" in line
+                  or 'path = "' in line
               ):
                   print(f"{number}: {line}")
 
           print("")
           print("========================================")
-          print("FINAL TARGET REFERENCES")
+          print("CHECKING FOR EMPTY PRODUCT_NAME")
           print("========================================")
 
-          for number, line in enumerate(project_text.splitlines(), 1):
-              if (
-                  TARGET_NAME in line
-                  or TARGET_ID in line
-                  or PRODUCT_ID in line
-              ):
+          empty_product_names = [
+              (number, line)
+              for number, line in enumerate(
+                  project_text.splitlines(),
+                  1
+              )
+              if 'PRODUCT_NAME = "";' in line
+          ]
+
+          if empty_product_names:
+              print("ERROR: Empty PRODUCT_NAME still exists!")
+
+              for number, line in empty_product_names:
                   print(f"{number}: {line}")
+
+              raise SystemExit(
+                  "ERROR: Xcode project still contains an empty PRODUCT_NAME."
+              )
+
+          print("No empty PRODUCT_NAME settings found.")
+
+          print("")
+          print("========================================")
+          print("CHECKING FOR MALFORMED .app PATH")
+          print("========================================")
+
+          bad_app_paths = [
+              (number, line)
+              for number, line in enumerate(
+                  project_text.splitlines(),
+                  1
+              )
+              if 'path = ".app";' in line
+          ]
+
+          if bad_app_paths:
+              print("ERROR: Malformed .app path still exists!")
+
+              for number, line in bad_app_paths:
+                  print(f"{number}: {line}")
+
+              raise SystemExit(
+                  "ERROR: Xcode project still contains path = .app."
+              )
+
+          print("No malformed .app product path found.")
 
           print("")
           print("========================================")
@@ -367,7 +423,7 @@ jobs:
           grep -n \
             -E 'PRODUCT_NAME|productName|productReference|path =|PBXNativeTarget|name = "ProjectQuestnt"' \
             ios-build/.xcodeproj/project.pbxproj \
-            | head -150
+            | head -200
 
           echo ""
           echo "===== REPAIRED SCHEME ====="
