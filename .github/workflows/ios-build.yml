@@ -142,6 +142,10 @@ jobs:
 
           print("===== REPAIRING PROJECT =====")
 
+          # ------------------------------------------------------------
+          # Repair product file reference
+          # ------------------------------------------------------------
+
           project_text = project_text.replace(
               'D0BCFE3418AEBDA2004A7AAE /* .app */',
               'D0BCFE3418AEBDA2004A7AAE /* ProjectQuestnt.app */'
@@ -151,6 +155,10 @@ jobs:
               'path = ".app";',
               'path = "ProjectQuestnt.app";'
           )
+
+          # ------------------------------------------------------------
+          # Repair native target name
+          # ------------------------------------------------------------
 
           project_text = project_text.replace(
               'D0BCFE3318AEBDA2004A7AAE /*  */ = {',
@@ -189,16 +197,12 @@ jobs:
           print("===== ORIGINAL TARGET BLOCK =====")
           print(target_block)
 
-          if 'name = "";' not in target_block:
-              raise SystemExit(
-                  "ERROR: Expected empty native target name was not found."
+          if 'name = "";' in target_block:
+              target_block = target_block.replace(
+                  'name = "";',
+                  'name = "ProjectQuestnt";',
+                  1
               )
-
-          target_block = target_block.replace(
-              'name = "";',
-              'name = "ProjectQuestnt";',
-              1
-          )
 
           project_text = (
               project_text[:target_start]
@@ -206,7 +210,44 @@ jobs:
               + project_text[target_end:]
           )
 
+          # ------------------------------------------------------------
+          # IMPORTANT:
+          # Godot generated PRODUCT_NAME as ".app".
+          #
+          # That causes Xcode to try to create:
+          #
+          #     Debug-iphoneos/.app
+          #
+          # and produces the "Multiple commands produce .app" error.
+          #
+          # Replace the malformed PRODUCT_NAME with ProjectQuestnt.
+          # ------------------------------------------------------------
+
+          product_name_replacements = project_text.count(
+              'PRODUCT_NAME = .app;'
+          )
+
+          print(
+              f"Malformed PRODUCT_NAME entries found: "
+              f"{product_name_replacements}"
+          )
+
+          project_text = project_text.replace(
+              'PRODUCT_NAME = .app;',
+              'PRODUCT_NAME = ProjectQuestnt;'
+          )
+
+          # Also handle quoted malformed product names if present.
+          project_text = project_text.replace(
+              'PRODUCT_NAME = ".app";',
+              'PRODUCT_NAME = ProjectQuestnt;'
+          )
+
           project.write_text(project_text)
+
+          # ------------------------------------------------------------
+          # Repair Xcode scheme
+          # ------------------------------------------------------------
 
           scheme_text = scheme.read_text()
 
@@ -234,6 +275,25 @@ jobs:
 
           scheme.write_text(scheme_text)
 
+          # ------------------------------------------------------------
+          # Final diagnostic checks
+          # ------------------------------------------------------------
+
+          print("")
+          print("===== FINAL PRODUCT NAME CHECK =====")
+
+          for line in project_text.splitlines():
+              if "PRODUCT_NAME" in line:
+                  print(line)
+
+          print("")
+          print("===== FINAL PRODUCT PATH CHECK =====")
+
+          for line in project_text.splitlines():
+              if 'path = "ProjectQuestnt.app"' in line:
+                  print(line)
+
+          print("")
           print("========================================")
           print("XCODE PROJECT REPAIR COMPLETE")
           print("========================================")
@@ -248,9 +308,9 @@ jobs:
           echo "===== REPAIRED PROJECT CHECKS ====="
 
           grep -n \
-            -E 'PBXNativeTarget|name = "ProjectQuestnt"|ProjectQuestnt.app' \
+            -E 'PBXNativeTarget|PRODUCT_NAME|name = "ProjectQuestnt"|ProjectQuestnt.app' \
             ios-build/.xcodeproj/project.pbxproj \
-            | head -80
+            | head -100
 
           echo ""
           echo "===== REPAIRED SCHEME ====="
@@ -320,92 +380,3 @@ jobs:
           )"
 
           if [ -z "$SCHEME" ]; then
-            echo "ERROR: No Xcode scheme found."
-            exit 1
-          fi
-
-          echo "XCODE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
-
-          echo "Using scheme: [$SCHEME]"
-
-      - name: Build unsigned iOS app
-        run: |
-          set -euxo pipefail
-
-          echo "Project: [$XCODE_PROJECT]"
-          echo "Scheme:  [$XCODE_SCHEME]"
-
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -sdk iphoneos \
-            -configuration Debug \
-            -derivedDataPath "$GITHUB_WORKSPACE/build" \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            build
-
-      - name: Find compiled app
-        run: |
-          set -euxo pipefail
-
-          APP_PATH="$(
-            find "$GITHUB_WORKSPACE/build/Build/Products" \
-              -maxdepth 2 \
-              -type d \
-              -name '*.app' \
-              -print \
-              -quit
-          )"
-
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No .app was produced."
-
-            echo ""
-            echo "Build products:"
-            find "$GITHUB_WORKSPACE/build/Build/Products" \
-              -maxdepth 4 \
-              -print
-
-            exit 1
-          fi
-
-          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
-
-          echo "Compiled app:"
-          echo "$APP_PATH"
-
-      - name: Package unsigned IPA
-        run: |
-          set -euxo pipefail
-
-          rm -rf ipa
-          mkdir -p ipa/Payload
-
-          cp -R "$APP_PATH" ipa/Payload/
-
-          cd ipa
-
-          zip -qry \
-            "$GITHUB_WORKSPACE/ProjectQuestnt-unsigned.ipa" \
-            Payload
-
-          cd "$GITHUB_WORKSPACE"
-
-          echo "IPA created:"
-          ls -lh ProjectQuestnt-unsigned.ipa
-
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: ProjectQuestnt-unsigned-IPA
-          path: ProjectQuestnt-unsigned.ipa
-
-      - name: Upload Xcode project
-        uses: actions/upload-artifact@v4
-        with:
-          name: ProjectQuestnt-Xcode-project
-          path: ios-build/
