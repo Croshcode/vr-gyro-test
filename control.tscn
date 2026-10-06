@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://bq3huk364skd3"]
+
+[ext_resource type="Script" uid="uid://cf2y41l77txb4" path="res://GYRO.gd" id="1_0fbet"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_xrivr"]
+
+[node name="Control" type="Control" unique_id=696196677]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_0fbet")
+
+[node name="GyroLabel" type="Label" parent="." unique_id=2059200687]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+text = "GYRO TEST"
+label_settings = SubResource("LabelSettings_xrivr")

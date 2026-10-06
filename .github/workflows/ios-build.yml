@@ -1,0 +1,50 @@
+
+name: Build iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Download Godot
+        run: |
+          curl -L -o godot.zip \
+            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_macos.universal.zip
+          unzip -q godot.zip
+          chmod +x Godot.app/Contents/MacOS/Godot
+
+      - name: Download Godot export templates
+        run: |
+          curl -L -o templates.tpz \
+            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz
+          mkdir -p "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable"
+          unzip -q templates.tpz -d templates
+          cp -R templates/templates/* \
+            "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable/"
+
+      - name: Check Godot
+        run: |
+          ./Godot.app/Contents/MacOS/Godot --version
+
+      - name: Export iOS project
+        run: |
+          ./Godot.app/Contents/MacOS/Godot \
+            --headless \
+            --path . \
+            --export-debug "iOS" \
+            ios-build
+
+      - name: Upload iOS project
+        uses: actions/upload-artifact@v4
+        with:
+          name: vr-gyro-test-ios
+          path: ios-build/
