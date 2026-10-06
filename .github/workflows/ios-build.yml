@@ -19,29 +19,18 @@ jobs:
         run: |
           set -euxo pipefail
 
-          echo "===== DOWNLOADING GODOT ====="
-
           curl -L --fail --retry 3 -o godot.zip \
             https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_macos.universal.zip
 
-          echo "===== UNZIPPING GODOT ====="
-
           unzip -q godot.zip
           chmod +x Godot.app/Contents/MacOS/Godot
-
-          echo "===== GODOT FILES ====="
-          ls -lah Godot.app/Contents/MacOS/
 
       - name: Download Godot export templates
         run: |
           set -euxo pipefail
 
-          echo "===== DOWNLOADING EXPORT TEMPLATES ====="
-
           curl -L --fail --retry 3 -o templates.tpz \
             https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz
-
-          echo "===== INSTALLING EXPORT TEMPLATES ====="
 
           mkdir -p "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable"
 
@@ -53,95 +42,40 @@ jobs:
           cp -R templates/templates/* \
             "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable/"
 
-          echo "===== INSTALLED TEMPLATES ====="
-          find "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable" \
-            -maxdepth 2 \
-            -print
-
       - name: Check Godot
         run: |
           set -euxo pipefail
 
           echo "===== GODOT VERSION ====="
-
           ./Godot.app/Contents/MacOS/Godot --version
 
           echo ""
-          echo "===== RUNNER INFO ====="
-
+          echo "===== RUNNER ====="
           sw_vers
           uname -a
 
           echo ""
           echo "===== DISK SPACE ====="
-
           df -h .
 
-          echo ""
-          echo "===== PROJECT FILES ====="
-
-          find . \
-            -maxdepth 2 \
-            -type f \
-            -not -path './.git/*' \
-            -print \
-            | sort
-
-      - name: Inspect iOS export preset
-        run: |
-          set -euxo pipefail
-
-          echo "===== IOS EXPORT PRESET ====="
-
-          grep -A120 '^\[preset\.0\]' export_presets.cfg || true
-
-      - name: Export iOS Xcode project with diagnostics
+      - name: Export iOS Xcode project
         timeout-minutes: 20
         run: |
           set -u
 
-          echo "=================================================="
+          echo "========================================"
           echo "STARTING GODOT IOS EXPORT"
-          echo "=================================================="
+          echo "========================================"
 
-          echo ""
-          echo "Start time:"
           date
-
-          echo ""
-          echo "Godot version:"
-          ./Godot.app/Contents/MacOS/Godot --version
-
-          echo ""
-          echo "Working directory:"
-          pwd
-
-          echo ""
-          echo "Disk space BEFORE export:"
-          df -h .
-
-          echo ""
-          echo "ios-build BEFORE export:"
-          ls -lah ios-build || true
-
-          echo ""
-          echo "=================================================="
-          echo "RUNNING GODOT"
-          echo "=================================================="
 
           rm -rf ios-build
           mkdir -p ios-build
 
           EXPORT_LOG="$GITHUB_WORKSPACE/godot-ios-export.log"
 
-          echo "Export log:"
-          echo "$EXPORT_LOG"
-
-          echo ""
-          echo "Godot export started at:"
-          date
-
-          set +e
+          echo "Export log: $EXPORT_LOG"
+          echo "Starting Godot..."
 
           ./Godot.app/Contents/MacOS/Godot \
             --headless \
@@ -149,150 +83,34 @@ jobs:
             --path . \
             --export-debug "IOS YAHHH" \
             ios-build/ \
-            2>&1 | tee "$EXPORT_LOG" &
+            2>&1 | tee "$EXPORT_LOG"
 
-          GODOT_PID=$!
-
-          echo ""
-          echo "Godot PID:"
-          echo "$GODOT_PID"
-
-          START_SECONDS=$(date +%s)
-          LAST_LOG_SIZE=0
-          LAST_PROGRESS_TIME=$START_SECONDS
-
-          while kill -0 "$GODOT_PID" 2>/dev/null; do
-            sleep 30
-
-            NOW_SECONDS=$(date +%s)
-            ELAPSED=$((NOW_SECONDS - START_SECONDS))
-
-            LOG_SIZE=0
-
-            if [ -f "$EXPORT_LOG" ]; then
-              LOG_SIZE=$(wc -c < "$EXPORT_LOG")
-            fi
-
-            echo ""
-            echo "=================================================="
-            echo "GODOT EXPORT STATUS"
-            echo "Elapsed: ${ELAPSED}s"
-            echo "Log size: ${LOG_SIZE} bytes"
-            echo "Time: $(date)"
-            echo "=================================================="
-
-            echo ""
-            echo "Last 30 log lines:"
-            tail -30 "$EXPORT_LOG" || true
-
-            echo ""
-            echo "ios-build size:"
-            du -sh ios-build 2>/dev/null || true
-
-            echo ""
-            echo "Recent files:"
-            find ios-build \
-              -type f \
-              -mmin -1 \
-              -print \
-              2>/dev/null \
-              | tail -30 || true
-
-            echo ""
-            echo "Godot process:"
-            ps -p "$GODOT_PID" -o pid,ppid,%cpu,%mem,etime,state,command || true
-
-            echo ""
-            echo "Disk space:"
-            df -h .
-
-            if [ "$LOG_SIZE" -ne "$LAST_LOG_SIZE" ]; then
-              LAST_LOG_SIZE=$LOG_SIZE
-              LAST_PROGRESS_TIME=$NOW_SECONDS
-              echo ""
-              echo "Godot log is still changing."
-            else
-              STALLED_FOR=$((NOW_SECONDS - LAST_PROGRESS_TIME))
-
-              echo ""
-              echo "No log growth for ${STALLED_FOR}s."
-
-              if [ "$STALLED_FOR" -ge 300 ]; then
-                echo ""
-                echo "WARNING: Godot has produced no new log output for 5 minutes."
-              fi
-            fi
-
-            if [ "$ELAPSED" -ge 1140 ]; then
-              echo ""
-              echo "=================================================="
-              echo "GODOT EXPORT TIME LIMIT REACHED"
-              echo "=================================================="
-
-              echo "Godot has been running for ${ELAPSED}s."
-
-              echo ""
-              echo "Final Godot log:"
-              tail -200 "$EXPORT_LOG" || true
-
-              echo ""
-              echo "Godot process:"
-              ps -p "$GODOT_PID" -o pid,ppid,%cpu,%mem,etime,state,command || true
-
-              echo ""
-              echo "Stopping Godot..."
-
-              kill "$GODOT_PID" 2>/dev/null || true
-              sleep 5
-              kill -9 "$GODOT_PID" 2>/dev/null || true
-
-              exit 124
-            fi
-          done
-
-          wait "$GODOT_PID"
-          GODOT_EXIT=$?
-
-          set -e
+          GODOT_EXIT=${PIPESTATUS[0]}
 
           echo ""
-          echo "=================================================="
+          echo "========================================"
           echo "GODOT EXPORT FINISHED"
-          echo "=================================================="
+          echo "========================================"
 
-          echo "Exit code:"
-          echo "$GODOT_EXIT"
-
-          echo ""
-          echo "Finish time:"
+          echo "Exit code: $GODOT_EXIT"
           date
 
           echo ""
-          echo "Disk space AFTER export:"
-          df -h .
+          echo "===== IOS-BUILD SIZE ====="
+          du -sh ios-build || true
 
           echo ""
-          echo "ios-build:"
+          echo "===== GENERATED FILES ====="
           find ios-build -maxdepth 4 -print | sort || true
 
           echo ""
-          echo "ios-build size:"
-          du -sh ios-build 2>/dev/null || true
-
-          echo ""
-          echo "===== LAST 200 GODOT LOG LINES ====="
+          echo "===== LAST 200 LOG LINES ====="
           tail -200 "$EXPORT_LOG" || true
 
           if [ "$GODOT_EXIT" -ne 0 ]; then
             echo ""
             echo "ERROR: Godot export failed."
             exit "$GODOT_EXIT"
-          fi
-
-          if [ ! -d "ios-build" ]; then
-            echo ""
-            echo "ERROR: ios-build directory was not created."
-            exit 1
           fi
 
           echo ""
@@ -360,7 +178,7 @@ jobs:
 
           if count != 1:
               raise SystemExit(
-                  f"ERROR: Could not repair the native target name. Matches: {count}"
+                  f"ERROR: Could not repair native target name. Matches: {count}"
               )
 
           project_text = project_text.replace(
@@ -394,7 +212,7 @@ jobs:
           project.write_text(project_text)
 
           print("Xcode project repair complete.")
-          print(f"Target ID:  {target_id}")
+          print(f"Target ID: {target_id}")
           print(f"Product ID: {product_id}")
           print("Target name: ProjectQuestnt")
           print("Product: ProjectQuestnt.app")
@@ -402,10 +220,10 @@ jobs:
           PY
 
           echo ""
-          echo "===== REPAIRED PROJECT CHECKS ====="
+          echo "===== REPAIRED PROJECT ====="
 
           grep -n \
-            -E 'PBXNativeTarget|name = "ProjectQuestnt"|productName = "Project Questnt"|ProjectQuestnt.app' \
+            -E 'PBXNativeTarget|name = "ProjectQuestnt"|ProjectQuestnt.app' \
             ios-build/.xcodeproj/project.pbxproj \
             | head -80
 
@@ -421,14 +239,13 @@ jobs:
           if [ -d "ios-build/.xcodeproj" ]; then
             mv "ios-build/.xcodeproj" "ios-build/ProjectQuestnt.xcodeproj"
           else
-            echo "ERROR: Generated .xcodeproj was not found."
+            echo "ERROR: Generated Xcode project was not found."
             exit 1
           fi
 
-          echo "Xcode project:"
           ls -la ios-build/
 
-      - name: Find Xcode project
+      - name: Set Xcode project
         run: |
           set -euxo pipefail
 
@@ -440,9 +257,6 @@ jobs:
           fi
 
           echo "XCODE_PROJECT=$XCODE_PROJECT" >> "$GITHUB_ENV"
-
-          echo "Using Xcode project:"
-          echo "$XCODE_PROJECT"
 
       - name: Validate Xcode project
         run: |
@@ -461,8 +275,6 @@ jobs:
       - name: Find Xcode scheme
         run: |
           set -euxo pipefail
-
-          echo "Finding Xcode scheme..."
 
           SCHEME="$(
             xcodebuild \
@@ -487,17 +299,14 @@ jobs:
 
           echo "XCODE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
 
-          echo ""
-          echo "Using scheme:"
-          echo "$SCHEME"
+          echo "Using scheme: $SCHEME"
 
       - name: Build unsigned iOS app
         run: |
           set -euxo pipefail
 
-          echo "Building:"
           echo "Project: $XCODE_PROJECT"
-          echo "Scheme:  $XCODE_SCHEME"
+          echo "Scheme: $XCODE_SCHEME"
 
           xcodebuild \
             -project "$XCODE_PROJECT" \
@@ -539,7 +348,6 @@ jobs:
 
           echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
-          echo ""
           echo "Compiled app:"
           echo "$APP_PATH"
 
@@ -560,7 +368,6 @@ jobs:
 
           cd "$GITHUB_WORKSPACE"
 
-          echo ""
           echo "IPA created:"
           ls -lh ProjectQuestnt-unsigned.ipa
 
