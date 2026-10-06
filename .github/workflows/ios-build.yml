@@ -51,43 +51,63 @@ jobs:
 
       - name: Find Xcode project
         run: |
-          XCODE_PROJECT="$(find ios-build -type d -name '*.xcodeproj' ! -name 'xcodeproj' -print -quit)"
+          echo "Searching for Xcode projects..."
+
+          XCODE_PROJECT="$(find ios-build \
+            -type d \
+            -name '*.xcodeproj' \
+            ! -name '.xcodeproj' \
+            -print \
+            -quit)"
 
           if [ -z "$XCODE_PROJECT" ]; then
-            echo "ERROR: No Xcode project was generated."
+            echo "ERROR: No valid Xcode project was generated."
+            echo ""
             echo "Contents of ios-build:"
             find ios-build -maxdepth 4 -print
             exit 1
           fi
 
-          echo "XCODE_PROJECT=$XCODE_PROJECT" >> "$GITHUB_ENV"
-
           echo "Found Xcode project:"
           echo "$XCODE_PROJECT"
 
+          echo "XCODE_PROJECT=$XCODE_PROJECT" >> "$GITHUB_ENV"
+
       - name: Find Xcode scheme
         run: |
-          xcodebuild -list -json \
-            -project "$XCODE_PROJECT" \
-            > xcode-list.json
+          echo "Using Xcode project:"
+          echo "$XCODE_PROJECT"
 
-          SCHEME="$(python3 -c '
-          import json
-          with open("xcode-list.json") as f:
-              data = json.load(f)
-          print(data["project"]["schemes"][0])
-          ')"
+          echo ""
+          echo "Xcode project information:"
+          xcodebuild -list -project "$XCODE_PROJECT"
+
+          echo ""
+          echo "Finding scheme..."
+
+          SCHEME="$(xcodebuild -list -project "$XCODE_PROJECT" 2>/dev/null | \
+            awk '
+              /Schemes:/ {
+                found=1
+                next
+              }
+              found && NF {
+                print
+                exit
+              }
+            ')"
 
           if [ -z "$SCHEME" ]; then
             echo "ERROR: No Xcode scheme found."
+            echo ""
             xcodebuild -list -project "$XCODE_PROJECT"
             exit 1
           fi
 
-          echo "XCODE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
-
           echo "Using scheme:"
           echo "$SCHEME"
+
+          echo "XCODE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
 
       - name: Build unsigned iOS app
         run: |
@@ -110,18 +130,25 @@ jobs:
             -maxdepth 2 \
             -type d \
             -name '*.app' \
-            -print -quit)"
+            -print \
+            -quit)"
 
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app was produced."
-            find "$GITHUB_WORKSPACE/build/Build/Products" -maxdepth 4 -print
+
+            echo ""
+            echo "Build products:"
+            find "$GITHUB_WORKSPACE/build/Build/Products" \
+              -maxdepth 4 \
+              -print
+
             exit 1
           fi
 
-          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
-
           echo "Compiled app:"
           echo "$APP_PATH"
+
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
 
       - name: Package IPA
         run: |
