@@ -135,36 +135,67 @@ jobs:
           if not scheme.exists():
               raise SystemExit("ERROR: Xcode scheme was not generated.")
 
-          target_id = "D0BCFE3318AEBDA2004A7AAE"
-          product_id = "D0BCFE3418AEBDA2004A7AAE"
+          TARGET_ID = "D0BCFE3318AEBDA2004A7AAE"
+          PRODUCT_ID = "D0BCFE3418AEBDA2004A7AAE"
+          TARGET_NAME = "ProjectQuestnt"
+          PRODUCT_NAME = "ProjectQuestnt.app"
 
           project_text = project.read_text()
+          scheme_text = scheme.read_text()
 
           print("===== REPAIRING PROJECT =====")
 
+          # ------------------------------------------------------------
+          # PRODUCT FILE REFERENCE
+          # ------------------------------------------------------------
+
           project_text = project_text.replace(
               'D0BCFE3418AEBDA2004A7AAE /* .app */',
-              'D0BCFE3418AEBDA2004A7AAE /* ProjectQuestnt.app */'
+              f'D0BCFE3418AEBDA2004A7AAE /* {PRODUCT_NAME} */'
+          )
+
+          project_text = project_text.replace(
+              'D0BCFE3418AEBDA2004A7AAE /* */',
+              f'D0BCFE3418AEBDA2004A7AAE /* {PRODUCT_NAME} */'
           )
 
           project_text = project_text.replace(
               'path = ".app";',
-              'path = "ProjectQuestnt.app";'
+              f'path = "{PRODUCT_NAME}";'
           )
 
           project_text = project_text.replace(
-              'D0BCFE3318AEBDA2004A7AAE /*  */ = {',
-              'D0BCFE3318AEBDA2004A7AAE /* ProjectQuestnt */ = {',
+              'path = .app;',
+              f'path = "{PRODUCT_NAME}";'
+          )
+
+          # ------------------------------------------------------------
+          # TARGET NAME
+          # ------------------------------------------------------------
+
+          project_text = project_text.replace(
+              f'{TARGET_ID} /*  */ = {{',
+              f'{TARGET_ID} /* {TARGET_NAME} */ = {{',
+              1
+          )
+
+          project_text = project_text.replace(
+              f'{TARGET_ID} /* */ = {{',
+              f'{TARGET_ID} /* {TARGET_NAME} */ = {{',
               1
           )
 
           project_text = project_text.replace(
               'Build configuration list for PBXNativeTarget ""',
-              'Build configuration list for PBXNativeTarget "ProjectQuestnt"'
+              f'Build configuration list for PBXNativeTarget "{TARGET_NAME}"'
           )
 
+          # ------------------------------------------------------------
+          # FIND NATIVE TARGET BLOCK
+          # ------------------------------------------------------------
+
           target_start = project_text.find(
-              'D0BCFE3318AEBDA2004A7AAE /* ProjectQuestnt */ = {'
+              f'{TARGET_ID} /* {TARGET_NAME} */ = {{'
           )
 
           if target_start == -1:
@@ -189,12 +220,25 @@ jobs:
           print("===== ORIGINAL TARGET BLOCK =====")
           print(target_block)
 
-          if 'name = "";' in target_block:
-              target_block = target_block.replace(
-                  'name = "";',
-                  'name = "ProjectQuestnt";',
-                  1
-              )
+          target_block = target_block.replace(
+              'name = "";',
+              f'name = "{TARGET_NAME}";'
+          )
+
+          target_block = target_block.replace(
+              'productName = "";',
+              f'productName = "{TARGET_NAME}";'
+          )
+
+          target_block = target_block.replace(
+              'productName = ".app";',
+              f'productName = "{TARGET_NAME}";'
+          )
+
+          target_block = target_block.replace(
+              'productName = ".app"',
+              f'productName = "{TARGET_NAME}"'
+          )
 
           project_text = (
               project_text[:target_start]
@@ -202,44 +246,71 @@ jobs:
               + project_text[target_end:]
           )
 
-          product_name_replacements = project_text.count(
-              'PRODUCT_NAME = .app;'
-          )
+          # ------------------------------------------------------------
+          # REPLACE ALL MALFORMED PRODUCT_NAME SETTINGS
+          # ------------------------------------------------------------
 
-          print(
-              f"Malformed PRODUCT_NAME entries found: "
-              f"{product_name_replacements}"
-          )
+          print("===== REPAIRING PRODUCT_NAME =====")
 
           project_text = project_text.replace(
               'PRODUCT_NAME = .app;',
-              'PRODUCT_NAME = ProjectQuestnt;'
+              f'PRODUCT_NAME = {TARGET_NAME};'
           )
 
           project_text = project_text.replace(
               'PRODUCT_NAME = ".app";',
-              'PRODUCT_NAME = ProjectQuestnt;'
+              f'PRODUCT_NAME = {TARGET_NAME};'
           )
+
+          project_text = project_text.replace(
+              'PRODUCT_NAME = .app',
+              f'PRODUCT_NAME = {TARGET_NAME}'
+          )
+
+          project_text = project_text.replace(
+              'PRODUCT_NAME = ".app"',
+              f'PRODUCT_NAME = {TARGET_NAME}'
+          )
+
+          # ------------------------------------------------------------
+          # REPLACE ANY REMAINING EXPLICIT ".app" PRODUCT PATH
+          # ------------------------------------------------------------
+
+          project_text = project_text.replace(
+              'path = ".app";',
+              f'path = "{PRODUCT_NAME}";'
+          )
+
+          project_text = project_text.replace(
+              'path = .app;',
+              f'path = "{PRODUCT_NAME}";'
+          )
+
+          # ------------------------------------------------------------
+          # WRITE PROJECT
+          # ------------------------------------------------------------
 
           project.write_text(project_text)
 
-          scheme_text = scheme.read_text()
+          # ------------------------------------------------------------
+          # REPAIR SCHEME
+          # ------------------------------------------------------------
 
           print("===== REPAIRING SCHEME =====")
 
           scheme_text = scheme_text.replace(
               'BlueprintIdentifier = "A340BDFEBCA49239A941883D"',
-              f'BlueprintIdentifier = "{target_id}"'
+              f'BlueprintIdentifier = "{TARGET_ID}"'
           )
 
           scheme_text = scheme_text.replace(
               'BlueprintName = ""',
-              'BlueprintName = "ProjectQuestnt"'
+              f'BlueprintName = "{TARGET_NAME}"'
           )
 
           scheme_text = scheme_text.replace(
               'BuildableName = ".app"',
-              'BuildableName = "ProjectQuestnt.app"'
+              f'BuildableName = "{PRODUCT_NAME}"'
           )
 
           scheme_text = scheme_text.replace(
@@ -249,38 +320,54 @@ jobs:
 
           scheme.write_text(scheme_text)
 
-          print("")
-          print("===== FINAL PRODUCT NAME CHECK =====")
-
-          for line in project_text.splitlines():
-              if "PRODUCT_NAME" in line:
-                  print(line)
+          # ------------------------------------------------------------
+          # FINAL DIAGNOSTICS
+          # ------------------------------------------------------------
 
           print("")
-          print("===== FINAL PRODUCT PATH CHECK =====")
+          print("========================================")
+          print("FINAL PRODUCT REFERENCES")
+          print("========================================")
 
-          for line in project_text.splitlines():
-              if 'path = "ProjectQuestnt.app"' in line:
-                  print(line)
+          for number, line in enumerate(project_text.splitlines(), 1):
+              if (
+                  "PRODUCT_NAME" in line
+                  or ".app" in line
+                  or "productName" in line
+                  or "productReference" in line
+                  or "PBXFileReference" in line
+              ):
+                  print(f"{number}: {line}")
+
+          print("")
+          print("========================================")
+          print("FINAL TARGET REFERENCES")
+          print("========================================")
+
+          for number, line in enumerate(project_text.splitlines(), 1):
+              if (
+                  TARGET_NAME in line
+                  or TARGET_ID in line
+                  or PRODUCT_ID in line
+              ):
+                  print(f"{number}: {line}")
 
           print("")
           print("========================================")
           print("XCODE PROJECT REPAIR COMPLETE")
           print("========================================")
-          print(f"Target ID:  {target_id}")
-          print(f"Product ID: {product_id}")
-          print("Target:     ProjectQuestnt")
-          print("Product:    ProjectQuestnt.app")
-          print("Scheme:     ProjectQuestnt")
+          print(f"Target:  {TARGET_NAME}")
+          print(f"Product: {PRODUCT_NAME}")
+          print(f"Scheme:  {TARGET_NAME}")
           PY
 
           echo ""
           echo "===== REPAIRED PROJECT CHECKS ====="
 
           grep -n \
-            -E 'PBXNativeTarget|PRODUCT_NAME|name = "ProjectQuestnt"|ProjectQuestnt.app' \
+            -E 'PRODUCT_NAME|productName|productReference|path =|PBXNativeTarget|name = "ProjectQuestnt"' \
             ios-build/.xcodeproj/project.pbxproj \
-            | head -100
+            | head -150
 
           echo ""
           echo "===== REPAIRED SCHEME ====="
