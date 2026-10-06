@@ -37,6 +37,7 @@ jobs:
 
       - name: Export iOS project
         run: |
+          mkdir -p ios-build
           ./Godot.app/Contents/MacOS/Godot \
             --headless \
             --path . \
