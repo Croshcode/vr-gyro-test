@@ -218,9 +218,50 @@ jobs:
           echo "Project: [$XCODE_PROJECT]"
           echo "Scheme:  [$XCODE_SCHEME]"
 
+          rm -rf ios-build/build ios-build/ipa
+
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -sdk iphoneos \
-            -configuration Debug
-
+            -configuration Debug \
+            -derivedDataPath ios-build/build
+
+      - name: Create unsigned IPA
+        run: |
+          set -euxo pipefail
+
+          echo "========================================"
+          echo "CREATING UNSIGNED IPA"
+          echo "========================================"
+
+          mkdir -p ios-build/ipa/Payload
+
+          APP_PATH="ios-build/build/Build/Products/Debug-iphoneos/ProjectQuestnt.app"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: App bundle not found at $APP_PATH"
+            echo "Available files:"
+            find ios-build/build -type d -name "*.app" || true
+            exit 1
+          fi
+
+          echo "Found app: $APP_PATH"
+
+          cp -R "$APP_PATH" ios-build/ipa/Payload/
+
+          cd ios-build/ipa
+          zip -r ../ProjectQuestnt-unsigned.ipa Payload
+          cd "$GITHUB_WORKSPACE"
+
+          echo ""
+          echo "===== IPA CREATED ====="
+          ls -lh ios-build/ProjectQuestnt-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectQuestnt-unsigned-IPA
+          path: ios-build/ProjectQuestnt-unsigned.ipa
+          if-no-files-found: warn
