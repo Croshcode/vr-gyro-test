@@ -110,6 +110,24 @@ jobs:
             ios-build/
           if-no-files-found: ignore
 
+      - name: Fix empty target names in Xcode project
+        run: |
+          set -euxo pipefail
+
+          PBXPROJ="ios-build/.xcodeproj/project.pbxproj"
+          SCHEME="ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme"
+
+          echo "Fixing project.pbxproj..."
+          sed -i '' 's/name = "";/name = "ProjectQuestnt";/g' "$PBXPROJ"
+          sed -i '' 's/productName = "";/productName = "ProjectQuestnt";/g' "$PBXPROJ"
+          sed -i '' 's/productName = ".app";/productName = "ProjectQuestnt";/g' "$PBXPROJ"
+
+          echo "Fixing scheme..."
+          sed -i '' 's/BlueprintName = ""/BlueprintName = "ProjectQuestnt"/g' "$SCHEME"
+          sed -i '' 's/BuildableName = ".app"/BuildableName = "ProjectQuestnt.app"/g' "$SCHEME"
+
+          echo "Project files fixed."
+
       - name: Rename Xcode project
         run: |
           set -euxo pipefail
