@@ -110,37 +110,17 @@ jobs:
             ios-build/
           if-no-files-found: ignore
 
-      - name: Fix Xcode project configuration
+      - name: Fix empty target names in Xcode project
         run: |
           set -euxo pipefail
 
           PBXPROJ="ios-build/.xcodeproj/project.pbxproj"
           SCHEME="ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme"
 
-          echo "===== FIXING XCODE PROJECT ====="
-
-          echo "Fixing empty product names..."
+          echo "Fixing project.pbxproj..."
           sed -i '' 's/name = "";/name = "ProjectQuestnt";/g' "$PBXPROJ"
           sed -i '' 's/productName = "";/productName = "ProjectQuestnt";/g' "$PBXPROJ"
           sed -i '' 's/productName = ".app";/productName = "ProjectQuestnt.app";/g' "$PBXPROJ"
-
-          echo "Fixing empty executable name..."
-          sed -i '' 's/EXECUTABLE_NAME = "";/EXECUTABLE_NAME = "ProjectQuestnt";/g' "$PBXPROJ"
-          sed -i '' 's/EXECUTABLE_PATH = "";/EXECUTABLE_PATH = "ProjectQuestnt";/g' "$PBXPROJ"
-
-          echo "Fixing module name..."
-          sed -i '' 's/-module-name  /-module-name ProjectQuestnt /g' "$PBXPROJ"
-
-          echo "Fixing dummy.h import path..."
-          sed -i '' 's|-import-objc-header /dummy.h|-import-objc-header dummy.h|g' "$PBXPROJ"
-
-          echo "Fixing entitlements path..."
-          sed -i '' 's|CODE_SIGN_ENTITLEMENTS = "/";|CODE_SIGN_ENTITLEMENTS = "/.entitlements";|g' "$PBXPROJ"
-          sed -i '' 's|CODE_SIGN_ENTITLEMENTS = "";|CODE_SIGN_ENTITLEMENTS = "/.entitlements";|g' "$PBXPROJ"
-
-          echo "Disabling code signing..."
-          sed -i '' 's/CODE_SIGN_IDENTITY = ".*";/CODE_SIGN_IDENTITY = "";/g' "$PBXPROJ"
-          sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' "$PBXPROJ"
 
           echo "Fixing scheme..."
           sed -i '' 's/BlueprintName = ""/BlueprintName = "ProjectQuestnt"/g' "$SCHEME"
@@ -162,6 +142,43 @@ jobs:
           fi
 
           ls -la ios-build/
+
+      - name: Fix malformed Swift build settings in generated Xcode project
+        run: |
+          set -euxo pipefail
+
+          PBXPROJ="ios-build/ProjectQuestnt.xcodeproj/project.pbxproj"
+
+          echo "Checking generated project for broken build flags..."
+          grep -n "module-name\|dummy.h" "$PBXPROJ" || true
+
+          python3 - "$PBXPROJ" <<'PY'
+          from pathlib import Path
+          import sys
+
+          p = Path(sys.argv[1])
+          text = p.read_text()
+
+          # Fix empty module name
+          text = text.replace("-module-name  ", "-module-name ProjectQuestnt ")
+          text = text.replace("-module-name ", "-module-name ProjectQuestnt ")
+
+          # Fix broken absolute header path
+          text = text.replace("-import-objc-header /dummy.h", "-import-objc-header dummy.h")
+          text = text.replace('-import-objc-header \"/dummy.h\"', '-import-objc-header dummy.h')
+
+          # Fix any empty module-name assignments if present
+          text = text.replace("MODULE_NAME = \"\";", "MODULE_NAME = \"ProjectQuestnt\";")
+
+          # Fix broken app name if needed
+          text = text.replace("PRODUCT_NAME = \".app\";", "PRODUCT_NAME = \"ProjectQuestnt.app\";")
+          text = text.replace("EXECUTABLE_NAME = \"\";", "EXECUTABLE_NAME = \"ProjectQuestnt\";")
+
+          p.write_text(text)
+          PY
+
+          echo "After patch:"
+          grep -n "module-name\|dummy.h" "$PBXPROJ" || true
 
       - name: Set Xcode project
         run: |
@@ -273,7 +290,7 @@ jobs:
 
           mkdir -p ios-build/ipa/Payload
 
-          APP_PATH="$(find ios-build/build -name "*.app" -type d | head -1)"
+          APP_PATH="$(find ios-build/build -name '*.app' -type d | head -1)"
 
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
             echo "ERROR: App bundle not found"
