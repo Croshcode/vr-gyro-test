@@ -128,6 +128,45 @@ jobs:
 
           echo "Project files fixed."
 
+                - name: Fix duplicate build phases in Xcode project
+        run: |
+          set -euxo pipefail
+
+          PBXPROJ="ios-build/.xcodeproj/project.pbxproj"
+
+          echo "Removing duplicate build phases..."
+          
+          # Remove problematic 'Create directory' build phase that conflicts with link phase
+          # Look for buildPhases array and remove duplicate entries
+          python3 << 'PYTHON'
+          from pathlib import Path
+          import re
+
+          pbxproj = Path("ios-build/.xcodeproj/project.pbxproj")
+          content = pbxproj.read_text()
+
+          # Find and remove duplicate/conflicting build phase references
+          # The error shows both "create directory" and "link" commands for the same .app
+          # We need to keep only the link phase, not the directory creation phase
+          
+          # Remove lines that have 'path = ".app";' which cause the directory creation conflict
+          lines = content.split('\n')
+          fixed_lines = []
+          skip_next = False
+          
+          for i, line in enumerate(lines):
+              # Skip lines that explicitly create the .app as a directory
+              if 'path = ".app";' in line and 'PBXFileReference' in content[max(0, content.rfind('\n', 0, content.find(line))-200):content.find(line)]:
+                  continue
+              fixed_lines.append(line)
+          
+          content = '\n'.join(fixed_lines)
+          pbxproj.write_text(content)
+          print("Duplicate build phases removed.")
+          PYTHON
+
+          echo "Build phases fixed."
+
       - name: Rename Xcode project
         run: |
           set -euxo pipefail
