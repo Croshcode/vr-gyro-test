@@ -110,229 +110,6 @@ jobs:
             ios-build/
           if-no-files-found: ignore
 
-      - name: Repair generated Xcode project
-        run: |
-          set -euxo pipefail
-
-          python3 <<'PY'
-          from pathlib import Path
-
-          project = Path("ios-build/.xcodeproj/project.pbxproj")
-          scheme = Path("ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme")
-
-          TARGET_ID = "D0BCFE3318AEBDA2004A7AAE"
-          PRODUCT_ID = "D0BCFE3418AEBDA2004A7AAE"
-
-          TARGET_NAME = "ProjectQuestnt"
-          PRODUCT_NAME = "ProjectQuestnt.app"
-
-          if not project.exists():
-              raise SystemExit("ERROR: project.pbxproj was not generated.")
-
-          if not scheme.exists():
-              raise SystemExit("ERROR: Xcode scheme was not generated.")
-
-          project_text = project.read_text()
-          scheme_text = scheme.read_text()
-
-          print("========================================")
-          print("REPAIRING XCODE PROJECT")
-          print("========================================")
-
-          project_text = project_text.replace(
-              f'{PRODUCT_ID} /* .app */',
-              f'{PRODUCT_ID} /* {PRODUCT_NAME} */'
-          )
-
-          project_text = project_text.replace(
-              'path = ".app";',
-              f'path = "{PRODUCT_NAME}";'
-          )
-
-          project_text = project_text.replace(
-              'path = .app;',
-              f'path = "{PRODUCT_NAME}";'
-          )
-
-          project_text = project_text.replace(
-              f'{TARGET_ID} /*  */ = {{',
-              f'{TARGET_ID} /* {TARGET_NAME} */ = {{'
-          )
-
-          project_text = project_text.replace(
-              f'{TARGET_ID} /* */ = {{',
-              f'{TARGET_ID} /* {TARGET_NAME} */ = {{'
-          )
-
-          project_text = project_text.replace(
-              'Build configuration list for PBXNativeTarget ""',
-              f'Build configuration list for PBXNativeTarget "{TARGET_NAME}"'
-          )
-
-          target_start = project_text.find(
-              f'{TARGET_ID} /* {TARGET_NAME} */ = {{'
-          )
-
-          if target_start == -1:
-              raise SystemExit(
-                  "ERROR: Could not find ProjectQuestnt native target."
-              )
-
-          target_end = project_text.find(
-              '\n\t};',
-              target_start
-          )
-
-          if target_end == -1:
-              raise SystemExit(
-                  "ERROR: Could not find end of native target."
-              )
-
-          target_end += len('\n\t};')
-
-          target_block = project_text[target_start:target_end]
-
-          target_block = target_block.replace(
-              'name = "";',
-              f'name = "{TARGET_NAME}";'
-          )
-
-          target_block = target_block.replace(
-              'productName = "";',
-              f'productName = "{TARGET_NAME}";'
-          )
-
-          target_block = target_block.replace(
-              'productName = ".app";',
-              f'productName = "{TARGET_NAME}";'
-          )
-
-          target_block = target_block.replace(
-              'productName = ".app"',
-              f'productName = "{TARGET_NAME}"'
-          )
-
-          project_text = (
-              project_text[:target_start]
-              + target_block
-              + project_text[target_end:]
-          )
-
-          fixed_lines = []
-
-          for line in project_text.splitlines():
-              if "PRODUCT_NAME =" in line:
-                  prefix = line.split("PRODUCT_NAME =", 1)[0]
-                  line = prefix + f'PRODUCT_NAME = {TARGET_NAME};'
-
-              fixed_lines.append(line)
-
-          project_text = "\n".join(fixed_lines) + "\n"
-
-          project_text = project_text.replace(
-              'productName = "";',
-              f'productName = "{TARGET_NAME}";'
-          )
-
-          project_text = project_text.replace(
-              'productName = ".app";',
-              f'productName = "{TARGET_NAME}";'
-          )
-
-          project.write_text(project_text)
-
-          print("===== REPAIRING SCHEME =====")
-
-          scheme_text = scheme_text.replace(
-              'BlueprintIdentifier = "A340BDFEBCA49239A941883D"',
-              f'BlueprintIdentifier = "{TARGET_ID}"'
-          )
-
-          scheme_text = scheme_text.replace(
-              'BlueprintName = ""',
-              f'BlueprintName = "{TARGET_NAME}"'
-          )
-
-          scheme_text = scheme_text.replace(
-              'BuildableName = ".app"',
-              f'BuildableName = "{PRODUCT_NAME}"'
-          )
-
-          scheme_text = scheme_text.replace(
-              'ReferencedContainer = "container:.xcodeproj"',
-              'ReferencedContainer = "container:ProjectQuestnt.xcodeproj"'
-          )
-
-          scheme.write_text(scheme_text)
-
-          print("")
-          print("===== PRODUCT SETTINGS =====")
-
-          for number, line in enumerate(project_text.splitlines(), 1):
-              if (
-                  "PRODUCT_NAME" in line
-                  or "productName" in line
-                  or "productReference" in line
-                  or 'path = "' in line
-              ):
-                  print(f"{number}: {line}")
-
-          empty_product_names = [
-              (number, line)
-              for number, line in enumerate(
-                  project_text.splitlines(),
-                  1
-              )
-              if 'PRODUCT_NAME = "";' in line
-          ]
-
-          if empty_product_names:
-              for number, line in empty_product_names:
-                  print(f"{number}: {line}")
-
-              raise SystemExit(
-                  "ERROR: Empty PRODUCT_NAME still exists."
-              )
-
-          bad_app_paths = [
-              (number, line)
-              for number, line in enumerate(
-                  project_text.splitlines(),
-                  1
-              )
-              if 'path = ".app";' in line
-          ]
-
-          if bad_app_paths:
-              for number, line in bad_app_paths:
-                  print(f"{number}: {line}")
-
-              raise SystemExit(
-                  "ERROR: Malformed .app path still exists."
-              )
-
-          print("")
-          print("========================================")
-          print("XCODE PROJECT REPAIR COMPLETE")
-          print("========================================")
-          print(f"Target:  {TARGET_NAME}")
-          print(f"Product: {PRODUCT_NAME}")
-          print(f"Scheme:  {TARGET_NAME}")
-          PY
-
-          echo ""
-          echo "===== REPAIRED PROJECT ====="
-
-          grep -n \
-            -E 'PRODUCT_NAME|productName|productReference|path =|PBXNativeTarget|name = "ProjectQuestnt"' \
-            ios-build/.xcodeproj/project.pbxproj \
-            | head -200 || true
-
-          echo ""
-          echo "===== REPAIRED SCHEME ====="
-
-          cat ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme
-
       - name: Rename Xcode project
         run: |
           set -euxo pipefail
@@ -412,62 +189,6 @@ jobs:
           echo "XCODE_SCHEME saved as:"
           echo "[$SCHEME]"
 
-      - name: Diagnose Xcode build settings
-        run: |
-          set -euxo pipefail
-
-          echo "========================================"
-          echo "XCODE BUILD SETTINGS"
-          echo "========================================"
-
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -sdk iphoneos \
-            -configuration Debug \
-            -showBuildSettings \
-            PRODUCT_NAME="ProjectQuestnt" \
-            > xcode-build-settings.txt
-
-          grep -E \
-            'PRODUCT_NAME =|FULL_PRODUCT_NAME =|WRAPPER_NAME =|WRAPPER_EXTENSION =|TARGET_BUILD_DIR =|BUILT_PRODUCTS_DIR =|CONFIGURATION_BUILD_DIR =|CONTENTS_FOLDER_PATH =' \
-            xcode-build-settings.txt \
-            || true
-
-          echo ""
-          echo "========================================"
-          echo "TARGET PRODUCT REFERENCES"
-          echo "========================================"
-
-          grep -n \
-            -E \
-            'productReference|wrapper.application|PBXFileReference|PBXNativeTarget|PRODUCT_NAME|WRAPPER_NAME|FULL_PRODUCT_NAME' \
-            ios-build/ProjectQuestnt.xcodeproj/project.pbxproj \
-            | head -250 \
-            || true
-
-          echo ""
-          echo "========================================"
-          echo "TARGET SECTION"
-          echo "========================================"
-
-          grep -n \
-            -A80 \
-            "$XCODE_SCHEME" \
-            ios-build/ProjectQuestnt.xcodeproj/project.pbxproj \
-            | head -120 \
-            || true
-
-      - name: Upload Xcode diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Xcode-build-diagnostics
-          path: |
-            xcode-build-settings.txt
-            ios-build/
-          if-no-files-found: ignore
-
       - name: Build unsigned iOS app
         run: |
           set -euxo pipefail
@@ -491,7 +212,7 @@ jobs:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             PRODUCT_NAME="ProjectQuestnt" \
-            build
+            build 2>&1 | tee xcode-build.log
 
       - name: Find compiled app
         run: |
@@ -551,6 +272,14 @@ jobs:
         with:
           name: ProjectQuestnt-unsigned-IPA
           path: ProjectQuestnt-unsigned.ipa
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-build-log
+          path: xcode-build.log
+          if-no-files-found: ignore
 
       - name: Upload Xcode project
         uses: actions/upload-artifact@v4
