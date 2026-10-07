@@ -555,7 +555,587 @@ jobs:
           rm -rf ipa
           mkdir -p ipa/Payload
 
+          cp -R "$APP_PATH" ipa/Payload/name: Build iOS
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Download Godot
+        run: |
+          set -euxo pipefail
+
+          curl -L --fail --retry 3 \
+            -o godot.zip \
+            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_macos.universal.zip
+
+          unzip -q godot.zip
+          chmod +x Godot.app/Contents/MacOS/Godot
+
+      - name: Download Godot export templates
+        run: |
+          set -euxo pipefail
+
+          curl -L --fail --retry 3 \
+            -o templates.tpz \
+            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz
+
+          mkdir -p "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable"
+
+          rm -rf templates
+          mkdir templates
+
+          unzip -q templates.tpz -d templates
+
+          cp -R templates/templates/* \
+            "$HOME/Library/Application Support/Godot/export_templates/4.7.2.stable/"
+
+      - name: Check Godot
+        run: |
+          set -euxo pipefail
+
+          echo "===== GODOT VERSION ====="
+          ./Godot.app/Contents/MacOS/Godot --version
+
+          echo "===== RUNNER ====="
+          sw_vers
+          uname -a
+
+          echo "===== DISK SPACE ====="
+          df -h .
+
+      - name: Export iOS Xcode project
+        timeout-minutes: 20
+        run: |
+          set -u
+
+          echo "========================================"
+          echo "STARTING GODOT IOS EXPORT"
+          echo "========================================"
+
+          date
+
+          rm -rf ios-build
+          mkdir -p ios-build
+
+          EXPORT_LOG="$GITHUB_WORKSPACE/godot-ios-export.log"
+
+          echo "Export log: $EXPORT_LOG"
+          echo "Starting Godot..."
+
+          ./Godot.app/Contents/MacOS/Godot \
+            --headless \
+            --verbose \
+            --path . \
+            --export-debug "IOS YAHHH" \
+            ios-build/ \
+            2>&1 | tee "$EXPORT_LOG"
+
+          GODOT_EXIT=${PIPESTATUS[0]}
+
+          echo "========================================"
+          echo "GODOT EXPORT FINISHED"
+          echo "========================================"
+
+          echo "Exit code: $GODOT_EXIT"
+          date
+
+          echo "===== IOS-BUILD SIZE ====="
+          du -sh ios-build || true
+
+          echo "===== GENERATED FILES ====="
+          find ios-build -maxdepth 4 -print | sort || true
+
+          echo "===== LAST 200 LOG LINES ====="
+          tail -200 "$EXPORT_LOG" || true
+
+          if [ "$GODOT_EXIT" -ne 0 ]; then
+            echo "ERROR: Godot export failed."
+            exit "$GODOT_EXIT"
+          fi
+
+          echo "Godot export completed successfully."
+
+      - name: Upload Godot export diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Godot-iOS-export-diagnostics
+          path: |
+            godot-ios-export.log
+            ios-build/
+          if-no-files-found: ignore
+
+      - name: Repair generated Xcode project
+        run: |
+          set -euxo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          project = Path("ios-build/.xcodeproj/project.pbxproj")
+          scheme = Path("ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme")
+
+          if not project.exists():
+              raise SystemExit("ERROR: project.pbxproj was not generated.")
+
+          if not scheme.exists():
+              raise SystemExit("ERROR: Xcode scheme was not generated.")
+
+          TARGET_ID = "D0BCFE3318AEBDA2004A7AAE"
+          PRODUCT_ID = "D0BCFE3418AEBDA2004A7AAE"
+
+          TARGET_NAME = "ProjectQuestnt"
+          PRODUCT_NAME = "ProjectQuestnt.app"
+
+          project_text = project.read_text()
+          scheme_text = scheme.read_text()
+
+          print("========================================")
+          print("REPAIRING GENERATED XCODE PROJECT")
+          print("========================================")
+
+          project_text = project_text.replace(
+              'D0BCFE3418AEBDA2004A7AAE /* .app */',
+              f'D0BCFE3418AEBDA2004A7AAE /* {PRODUCT_NAME} */'
+          )
+
+          project_text = project_text.replace(
+              'path = ".app";',
+              f'path = "{PRODUCT_NAME}";'
+          )
+
+          project_text = project_text.replace(
+              'path = .app;',
+              f'path = "{PRODUCT_NAME}";'
+          )
+
+          project_text = project_text.replace(
+              f'{TARGET_ID} /*  */ = {{',
+              f'{TARGET_ID} /* {TARGET_NAME} */ = {{',
+              1
+          )
+
+          project_text = project_text.replace(
+              f'{TARGET_ID} /* */ = {{',
+              f'{TARGET_ID} /* {TARGET_NAME} */ = {{',
+              1
+          )
+
+          project_text = project_text.replace(
+              'Build configuration list for PBXNativeTarget ""',
+              f'Build configuration list for PBXNativeTarget "{TARGET_NAME}"'
+          )
+
+          target_start = project_text.find(
+              f'{TARGET_ID} /* {TARGET_NAME} */ = {{'
+          )
+
+          if target_start == -1:
+              raise SystemExit(
+                  "ERROR: Could not find ProjectQuestnt native target."
+              )
+
+          target_end = project_text.find(
+              '\n\t};',
+              target_start
+          )
+
+          if target_end == -1:
+              raise SystemExit(
+                  "ERROR: Could not find end of native target."
+              )
+
+          target_end += len('\n\t};')
+
+          target_block = project_text[target_start:target_end]
+
+          target_block = target_block.replace(
+              'name = "";',
+              f'name = "{TARGET_NAME}";'
+          )
+
+          target_block = target_block.replace(
+              'productName = "";',
+              f'productName = "{TARGET_NAME}";'
+          )
+
+          target_block = target_block.replace(
+              'productName = ".app";',
+              f'productName = "{TARGET_NAME}";'
+          )
+
+          target_block = target_block.replace(
+              'productName = ".app"',
+              f'productName = "{TARGET_NAME}"'
+          )
+
+          project_text = (
+              project_text[:target_start]
+              + target_block
+              + project_text[target_end:]
+          )
+
+          print("")
+          print("===== PRODUCT_NAME SETTINGS BEFORE FIX =====")
+
+          for number, line in enumerate(project_text.splitlines(), 1):
+              if "PRODUCT_NAME" in line:
+                  print(f"{number}: {line}")
+
+          fixed_lines = []
+
+          for line in project_text.splitlines():
+              if "PRODUCT_NAME =" in line:
+                  prefix = line.split("PRODUCT_NAME =", 1)[0]
+                  line = prefix + f'PRODUCT_NAME = {TARGET_NAME};'
+
+              fixed_lines.append(line)
+
+          project_text = "\n".join(fixed_lines) + "\n"
+
+          print("")
+          print("===== PRODUCT_NAME SETTINGS AFTER FIX =====")
+
+          for number, line in enumerate(project_text.splitlines(), 1):
+              if "PRODUCT_NAME" in line:
+                  print(f"{number}: {line}")
+
+          project_text = project_text.replace(
+              'productName = "";',
+              f'productName = "{TARGET_NAME}";'
+          )
+
+          project_text = project_text.replace(
+              'productName = ".app";',
+              f'productName = "{TARGET_NAME}";'
+          )
+
+          project.write_text(project_text)
+
+          print("")
+          print("===== REPAIRING SCHEME =====")
+
+          scheme_text = scheme_text.replace(
+              'BlueprintIdentifier = "A340BDFEBCA49239A941883D"',
+              f'BlueprintIdentifier = "{TARGET_ID}"'
+          )
+
+          scheme_text = scheme_text.replace(
+              'BlueprintName = ""',
+              f'BlueprintName = "{TARGET_NAME}"'
+          )
+
+          scheme_text = scheme_text.replace(
+              'BuildableName = ".app"',
+              f'BuildableName = "{PRODUCT_NAME}"'
+          )
+
+          scheme_text = scheme_text.replace(
+              'ReferencedContainer = "container:.xcodeproj"',
+              'ReferencedContainer = "container:ProjectQuestnt.xcodeproj"'
+          )
+
+          scheme.write_text(scheme_text)
+
+          print("")
+          print("========================================")
+          print("FINAL PRODUCT REFERENCES")
+          print("========================================")
+
+          for number, line in enumerate(project_text.splitlines(), 1):
+              if (
+                  "PRODUCT_NAME" in line
+                  or "productName" in line
+                  or "productReference" in line
+                  or 'path = "' in line
+              ):
+                  print(f"{number}: {line}")
+
+          print("")
+          print("========================================")
+          print("CHECKING FOR EMPTY PRODUCT_NAME")
+          print("========================================")
+
+          empty_product_names = [
+              (number, line)
+              for number, line in enumerate(
+                  project_text.splitlines(),
+                  1
+              )
+              if 'PRODUCT_NAME = "";' in line
+          ]
+
+          if empty_product_names:
+              for number, line in empty_product_names:
+                  print(f"{number}: {line}")
+
+              raise SystemExit(
+                  "ERROR: Xcode project still contains an empty PRODUCT_NAME."
+              )
+
+          print("No empty PRODUCT_NAME settings found.")
+
+          print("")
+          print("========================================")
+          print("CHECKING FOR MALFORMED .app PATH")
+          print("========================================")
+
+          bad_app_paths = [
+              (number, line)
+              for number, line in enumerate(
+                  project_text.splitlines(),
+                  1
+              )
+              if 'path = ".app";' in line
+          ]
+
+          if bad_app_paths:
+              for number, line in bad_app_paths:
+                  print(f"{number}: {line}")
+
+              raise SystemExit(
+                  "ERROR: Xcode project still contains path = .app."
+              )
+
+          print("No malformed .app product path found.")
+
+          print("")
+          print("========================================")
+          print("XCODE PROJECT REPAIR COMPLETE")
+          print("========================================")
+          print(f"Target:  {TARGET_NAME}")
+          print(f"Product: {PRODUCT_NAME}")
+          print(f"Scheme:  {TARGET_NAME}")
+          PY
+
+          echo ""
+          echo "===== REPAIRED PROJECT CHECKS ====="
+
+          grep -n \
+            -E 'PRODUCT_NAME|productName|productReference|path =|PBXNativeTarget|name = "ProjectQuestnt"' \
+            ios-build/.xcodeproj/project.pbxproj \
+            | head -200
+
+          echo ""
+          echo "===== REPAIRED SCHEME ====="
+
+          cat ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme
+
+      - name: Rename Xcode project
+        run: |
+          set -euxo pipefail
+
+          if [ -d "ios-build/.xcodeproj" ]; then
+            mv "ios-build/.xcodeproj" \
+              "ios-build/ProjectQuestnt.xcodeproj"
+          else
+            echo "ERROR: Generated Xcode project was not found."
+            exit 1
+          fi
+
+          ls -la ios-build/
+
+      - name: Set Xcode project
+        run: |
+          set -euxo pipefail
+
+          XCODE_PROJECT="ios-build/ProjectQuestnt.xcodeproj"
+
+          if [ ! -d "$XCODE_PROJECT" ]; then
+            echo "ERROR: ProjectQuestnt.xcodeproj was not found."
+            exit 1
+          fi
+
+          echo "XCODE_PROJECT=$XCODE_PROJECT" >> "$GITHUB_ENV"
+
+      - name: Validate Xcode project
+        run: |
+          set -euxo pipefail
+
+          echo "===== XCODE PROJECT ====="
+          echo "$XCODE_PROJECT"
+
+          echo ""
+          echo "===== XCODE PROJECT LIST ====="
+
+          xcodebuild \
+            -list \
+            -project "$XCODE_PROJECT"
+
+      - name: Find Xcode scheme
+        run: |
+          set -euxo pipefail
+
+          echo "===== FINDING XCODE SCHEME ====="
+
+          SCHEME="$(
+            xcodebuild \
+              -list \
+              -project "$XCODE_PROJECT" 2>/dev/null |
+            awk '
+              /Schemes:/ {
+                found = 1
+                next
+              }
+
+              found && NF {
+                gsub(/^[[:space:]]+/, "", $0)
+                gsub(/[[:space:]]+$/, "", $0)
+                print $0
+                exit
+              }
+            '
+          )"
+
+          echo "Detected scheme: [$SCHEME]"
+
+          if [ -z "$SCHEME" ]; then
+            echo "ERROR: No Xcode scheme found."
+            exit 1
+          fi
+
+          echo "XCODE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
+
+          echo "XCODE_SCHEME saved as:"
+          echo "[$SCHEME]"
+
+      - name: Diagnose Xcode build settings
+        run: |
+          set -euxo pipefail
+
+          echo "========================================"
+          echo "XCODE BUILD SETTINGS DIAGNOSTIC"
+          echo "========================================"
+
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphoneos \
+            -configuration Debug \
+            -showBuildSettings \
+            PRODUCT_NAME="ProjectQuestnt" \
+            | grep -E \
+              '(^| )PRODUCT_NAME =|(^| )FULL_PRODUCT_NAME =|(^| )WRAPPER_NAME =|(^| )WRAPPER_EXTENSION =|(^| )TARGET_BUILD_DIR =|(^| )BUILT_PRODUCTS_DIR =|(^| )CONFIGURATION_BUILD_DIR =|(^| )CONTENTS_FOLDER_PATH ='
+
+          echo ""
+          echo "========================================"
+          echo "TARGET BUILD PHASES"
+          echo "========================================"
+
+          grep -n \
+            -A80 \
+            'D0BCFE3318AEBDA2004A7AAE' \
+            ios-build/ProjectQuestnt.xcodeproj/project.pbxproj \
+            | head -100
+
+          echo ""
+          echo "========================================"
+          echo "ALL PRODUCT REFERENCES"
+          echo "========================================"
+
+          grep -n \
+            -E \
+            'productReference|wrapper.application|PBXFileReference|PBXNativeTarget|PRODUCT_NAME|WRAPPER_NAME|FULL_PRODUCT_NAME' \
+            ios-build/ProjectQuestnt.xcodeproj/project.pbxproj \
+            | head -200
+
+      - name: Build unsigned iOS app
+        run: |
+          set -euxo pipefail
+
+          echo "========================================"
+          echo "BUILDING IOS APP"
+          echo "========================================"
+
+          echo "Project: [$XCODE_PROJECT]"
+          echo "Scheme:  [$XCODE_SCHEME]"
+
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphoneos \
+            -configuration Debug \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            PRODUCT_NAME="ProjectQuestnt" \
+            build
+
+      - name: Find compiled app
+        run: |
+          set -euxo pipefail
+
+          APP_PATH="$(
+            find "$GITHUB_WORKSPACE/build/Build/Products" \
+              -maxdepth 2 \
+              -type d \
+              -name '*.app' \
+              -print \
+              -quit
+          )"
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app was produced."
+
+            echo ""
+            echo "Build products:"
+            find "$GITHUB_WORKSPACE/build/Build/Products" \
+              -maxdepth 4 \
+              -print
+
+            exit 1
+          fi
+
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+          echo "Compiled app:"
+          echo "$APP_PATH"
+
+      - name: Package unsigned IPA
+        run: |
+          set -euxo pipefail
+
+          rm -rf ipa
+          mkdir -p ipa/Payload
+
           cp -R "$APP_PATH" ipa/Payload/
+
+          cd ipa
+
+          zip -qry \
+            "$GITHUB_WORKSPACE/ProjectQuestnt-unsigned.ipa" \
+            Payload
+
+          cd "$GITHUB_WORKSPACE"
+
+          echo "IPA created:"
+          ls -lh ProjectQuestnt-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectQuestnt-unsigned-IPA
+          path: ProjectQuestnt-unsigned.ipa
+
+      - name: Upload Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProjectQuestnt-Xcode-project
+          path: ios-build/
 
           cd ipa
 
