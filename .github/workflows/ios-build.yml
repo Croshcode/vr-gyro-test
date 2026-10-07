@@ -150,5 +150,77 @@ jobs:
           XCODE_PROJECT="ios-build/ProjectQuestnt.xcodeproj"
 
           if [ ! -d "$XCODE_PROJECT" ]; then
-            echo "ERROR: Project](#)
+            echo "ERROR: ProjectQuestnt.xcodeproj was not found."
+            exit 1
+          fi
+
+          echo "XCODE_PROJECT=$XCODE_PROJECT" >> "$GITHUB_ENV"
+
+      - name: Validate Xcode project
+        run: |
+          set -euxo pipefail
+
+          echo "===== XCODE PROJECT ====="
+          echo "$XCODE_PROJECT"
+
+          echo ""
+          echo "===== XCODE PROJECT LIST ====="
+
+          xcodebuild \
+            -list \
+            -project "$XCODE_PROJECT"
+
+      - name: Find Xcode scheme
+        run: |
+          set -euxo pipefail
+
+          echo "===== FINDING XCODE SCHEME ====="
+
+          SCHEME="$(
+            xcodebuild \
+              -list \
+              -project "$XCODE_PROJECT" 2>/dev/null |
+            awk '
+              /Schemes:/ {
+                found = 1
+                next
+              }
+
+              found && NF {
+                gsub(/^[[:space:]]+/, "", $0)
+                gsub(/[[:space:]]+$/, "", $0)
+                print $0
+                exit
+              }
+            '
+          )"
+
+          echo "Detected scheme: [$SCHEME]"
+
+          if [ -z "$SCHEME" ]; then
+            echo "ERROR: No Xcode scheme found."
+            exit 1
+          fi
+
+          echo "XCODE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
+
+          echo "XCODE_SCHEME saved as:"
+          echo "[$SCHEME]"
+
+      - name: Build unsigned iOS app
+        run: |
+          set -euxo pipefail
+
+          echo "========================================"
+          echo "BUILDING IOS APP"
+          echo "========================================"
+
+          echo "Project: [$XCODE_PROJECT]"
+          echo "Scheme:  [$XCODE_SCHEME]"
+
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphoneos \
+            -configuration Debug
 
