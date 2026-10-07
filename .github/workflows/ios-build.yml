@@ -207,6 +207,18 @@ jobs:
           echo "XCODE_SCHEME saved as:"
           echo "[$SCHEME]"
 
+      - name: Get available configurations
+        run: |
+          set -euxo pipefail
+
+          echo "===== AVAILABLE CONFIGURATIONS ====="
+
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -showBuildSettings \
+            -sdk iphoneos | grep "CONFIGURATION" | head -20 || true
+
       - name: Build unsigned iOS app
         run: |
           set -euxo pipefail
@@ -224,8 +236,21 @@ jobs:
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -sdk iphoneos \
-            -configuration Debug \
-            -derivedDataPath ios-build/build
+            -derivedDataPath ios-build/build \
+            -verbose 2>&1 | tee ios-build/xcode-build.log
+
+          XCODE_EXIT=${PIPESTATUS[0]}
+
+          echo ""
+          echo "===== XCODE BUILD EXIT CODE: $XCODE_EXIT ====="
+          echo ""
+          echo "===== LAST 300 BUILD LOG LINES ====="
+          tail -300 ios-build/xcode-build.log || true
+
+          if [ "$XCODE_EXIT" -ne 0 ]; then
+            echo "ERROR: Xcode build failed."
+            exit "$XCODE_EXIT"
+          fi
 
       - name: Create unsigned IPA
         run: |
@@ -243,6 +268,7 @@ jobs:
             echo "ERROR: App bundle not found at $APP_PATH"
             echo "Available files:"
             find ios-build/build -type d -name "*.app" || true
+            find ios-build/build -type f -name "*.app" || true
             exit 1
           fi
 
@@ -258,8 +284,16 @@ jobs:
           echo "===== IPA CREATED ====="
           ls -lh ios-build/ProjectQuestnt-unsigned.ipa
 
-      - name: Upload unsigned IPA
+      - name: Upload build logs
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Xcode-build-logs
+          path: ios-build/xcode-build.log
+          if-no-files-found: ignore
+
+      - name: Upload unsigned IPA
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ProjectQuestnt-unsigned-IPA
