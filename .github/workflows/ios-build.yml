@@ -110,18 +110,37 @@ jobs:
             ios-build/
           if-no-files-found: ignore
 
-      - name: Fix empty target names in Xcode project
+      - name: Fix Xcode project configuration
         run: |
           set -euxo pipefail
 
           PBXPROJ="ios-build/.xcodeproj/project.pbxproj"
           SCHEME="ios-build/.xcodeproj/xcshareddata/xcschemes/.xcscheme"
 
-          echo "Fixing project.pbxproj..."
+          echo "===== FIXING XCODE PROJECT ====="
+
+          # Fix empty target and product names
+          echo "Fixing empty product names..."
           sed -i '' 's/name = "";/name = "ProjectQuestnt";/g' "$PBXPROJ"
           sed -i '' 's/productName = "";/productName = "ProjectQuestnt";/g' "$PBXPROJ"
-          sed -i '' 's/productName = ".app";/productName = "ProjectQuestnt";/g' "$PBXPROJ"
+          sed -i '' 's/productName = ".app";/productName = "ProjectQuestnt.app";/g' "$PBXPROJ"
 
+          # Fix empty executable name
+          echo "Fixing empty executable name..."
+          sed -i '' 's/EXECUTABLE_NAME = "";/EXECUTABLE_NAME = "ProjectQuestnt";/g' "$PBXPROJ"
+          sed -i '' 's/EXECUTABLE_PATH = "";/EXECUTABLE_PATH = "ProjectQuestnt";/g' "$PBXPROJ"
+
+          # Fix entitlements path
+          echo "Fixing entitlements path..."
+          sed -i '' 's|CODE_SIGN_ENTITLEMENTS = "/";|CODE_SIGN_ENTITLEMENTS = "/.entitlements";|g' "$PBXPROJ"
+          sed -i '' 's|CODE_SIGN_ENTITLEMENTS = "";|CODE_SIGN_ENTITLEMENTS = "/.entitlements";|g' "$PBXPROJ"
+
+          # Disable code signing for unsigned build
+          echo "Disabling code signing..."
+          sed -i '' 's/CODE_SIGN_IDENTITY = ".*";/CODE_SIGN_IDENTITY = "";/g' "$PBXPROJ"
+          sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' "$PBXPROJ"
+
+          # Fix scheme
           echo "Fixing scheme..."
           sed -i '' 's/BlueprintName = ""/BlueprintName = "ProjectQuestnt"/g' "$SCHEME"
           sed -i '' 's/BuildableName = ".app"/BuildableName = "ProjectQuestnt.app"/g' "$SCHEME"
@@ -207,24 +226,12 @@ jobs:
           echo "XCODE_SCHEME saved as:"
           echo "[$SCHEME]"
 
-      - name: Get available configurations
-        run: |
-          set -euxo pipefail
-
-          echo "===== AVAILABLE CONFIGURATIONS ====="
-
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -showBuildSettings \
-            -sdk iphoneos | grep "CONFIGURATION" | head -20 || true
-
       - name: Build unsigned iOS app
         run: |
           set -euxo pipefail
 
           echo "========================================"
-          echo "BUILDING IOS APP"
+          echo "BUILDING IOS APP (UNSIGNED)"
           echo "========================================"
 
           echo "Project: [$XCODE_PROJECT]"
@@ -237,6 +244,9 @@ jobs:
             -scheme "$XCODE_SCHEME" \
             -sdk iphoneos \
             -derivedDataPath ios-build/build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             -verbose 2>&1 | tee ios-build/xcode-build.log
 
           XCODE_EXIT=${PIPESTATUS[0]}
@@ -262,13 +272,13 @@ jobs:
 
           mkdir -p ios-build/ipa/Payload
 
-          APP_PATH="ios-build/build/Build/Products/Debug-iphoneos/ProjectQuestnt.app"
+          # Look for the actual app bundle
+          APP_PATH="$(find ios-build/build -name "*.app" -type d | head -1)"
 
-          if [ ! -d "$APP_PATH" ]; then
-            echo "ERROR: App bundle not found at $APP_PATH"
-            echo "Available files:"
-            find ios-build/build -type d -name "*.app" || true
-            find ios-build/build -type f -name "*.app" || true
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: App bundle not found"
+            echo "Contents of build directory:"
+            find ios-build/build -type d -maxdepth 5 | head -50
             exit 1
           fi
 
