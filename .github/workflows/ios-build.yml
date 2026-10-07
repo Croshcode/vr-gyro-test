@@ -119,28 +119,29 @@ jobs:
 
           echo "===== FIXING XCODE PROJECT ====="
 
-          # Fix empty target and product names
           echo "Fixing empty product names..."
           sed -i '' 's/name = "";/name = "ProjectQuestnt";/g' "$PBXPROJ"
           sed -i '' 's/productName = "";/productName = "ProjectQuestnt";/g' "$PBXPROJ"
           sed -i '' 's/productName = ".app";/productName = "ProjectQuestnt.app";/g' "$PBXPROJ"
 
-          # Fix empty executable name
           echo "Fixing empty executable name..."
           sed -i '' 's/EXECUTABLE_NAME = "";/EXECUTABLE_NAME = "ProjectQuestnt";/g' "$PBXPROJ"
           sed -i '' 's/EXECUTABLE_PATH = "";/EXECUTABLE_PATH = "ProjectQuestnt";/g' "$PBXPROJ"
 
-          # Fix entitlements path
+          echo "Fixing module name..."
+          sed -i '' 's/-module-name  /-module-name ProjectQuestnt /g' "$PBXPROJ"
+
+          echo "Fixing dummy.h import path..."
+          sed -i '' 's|-import-objc-header /dummy.h|-import-objc-header dummy.h|g' "$PBXPROJ"
+
           echo "Fixing entitlements path..."
           sed -i '' 's|CODE_SIGN_ENTITLEMENTS = "/";|CODE_SIGN_ENTITLEMENTS = "/.entitlements";|g' "$PBXPROJ"
           sed -i '' 's|CODE_SIGN_ENTITLEMENTS = "";|CODE_SIGN_ENTITLEMENTS = "/.entitlements";|g' "$PBXPROJ"
 
-          # Disable code signing for unsigned build
           echo "Disabling code signing..."
           sed -i '' 's/CODE_SIGN_IDENTITY = ".*";/CODE_SIGN_IDENTITY = "";/g' "$PBXPROJ"
           sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' "$PBXPROJ"
 
-          # Fix scheme
           echo "Fixing scheme..."
           sed -i '' 's/BlueprintName = ""/BlueprintName = "ProjectQuestnt"/g' "$SCHEME"
           sed -i '' 's/BuildableName = ".app"/BuildableName = "ProjectQuestnt.app"/g' "$SCHEME"
@@ -272,7 +273,6 @@ jobs:
 
           mkdir -p ios-build/ipa/Payload
 
-          # Look for the actual app bundle
           APP_PATH="$(find ios-build/build -name "*.app" -type d | head -1)"
 
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
